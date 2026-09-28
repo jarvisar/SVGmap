@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ajarvis.co/SVGmap/sitemap.xml
+Sitemap: https://svgmap.ajarvis.co/sitemap.xml
