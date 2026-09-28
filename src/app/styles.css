@@ -74,6 +74,7 @@ a:hover {
 }
 
 .brand {
+  margin: 0;
   font-weight: 600;
   font-size: 16px;
   letter-spacing: 0.2px;
