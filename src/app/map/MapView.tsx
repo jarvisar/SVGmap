@@ -8,7 +8,8 @@ import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
 import { bandPathD, shapePathD } from '../../engine/layout/shapes.ts';
 import { polylineD } from '../../engine/svg/format.ts';
 import type { LabelArtwork } from '../../engine/text/label.ts';
-import { useApp } from '../store.ts';
+import { LockIcon } from '../components/controls.tsx';
+import { scaleOf, useApp } from '../store.ts';
 import { useLabelArtwork } from './useLabelArtwork.ts';
 
 const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
@@ -18,7 +19,22 @@ setWorkerUrl(maplibreWorker);
 
 const COARSE = matchMedia('(pointer: coarse)').matches;
 const HINT = COARSE ? 'Drag to move, pinch to zoom, twist to rotate' : 'Drag to move, scroll to zoom, right-drag to rotate';
-const LOCKED_HINT = COARSE ? 'Drag to move, twist to rotate. Scale is locked' : 'Drag to move, right-drag to rotate. Scale is locked';
+const LOCKED_HINT = COARSE ? 'Drag to move, twist to rotate' : 'Drag to move, right-drag to rotate';
+
+const MIN_ZOOM = 0;
+const MAX_ZOOM = 24;
+
+// Locking sets both zoom limits to the zoom for the locked scale, which stops
+// every way of zooming and greys out the zoom buttons. null opens them again.
+function pinZoom(map: MapLibre, zoom: number | null) {
+  const min = zoom === null ? MIN_ZOOM : Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+  const max = zoom === null ? MAX_ZOOM : min;
+  if (map.getMinZoom() === min && map.getMaxZoom() === max) return;
+  // MapLibre throws if min would end up above max, so widen the range first.
+  map.setMinZoom(MIN_ZOOM);
+  map.setMaxZoom(max);
+  map.setMinZoom(min);
+}
 
 interface Frame {
   // px per mm
@@ -64,6 +80,7 @@ export function MapView() {
   const fromMap = useRef<AreaSpec | null>(null);
   const programmatic = useRef(false);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const [nudged, setNudged] = useState(false);
 
   const area = useApp((s) => s.area);
   const product = useApp((s) => s.product);
@@ -72,6 +89,8 @@ export function MapView() {
   const customFontName = useApp((s) => s.customFontName);
   const setArea = useApp((s) => s.setArea);
   const scaleLocked = useApp((s) => s.scaleLocked);
+  const setScaleLocked = useApp((s) => s.setScaleLocked);
+  const scale = Math.round(useApp(scaleOf));
 
   const layout = useMemo(() => {
     try {
@@ -93,6 +112,8 @@ export function MapView() {
       style: BASEMAP,
       center: [initial.lon, initial.lat],
       zoom: 13,
+      minZoom: MIN_ZOOM,
+      maxZoom: MAX_ZOOM,
       bearing: initial.bearing,
       maxPitch: 0,
       pitchWithRotate: false,
@@ -110,28 +131,28 @@ export function MapView() {
         lon: c.lng,
         lat: c.lat,
         bearing: map.getBearing(),
-        // Keeps the stored width while locked, or the drift in metres per pixel
-        // while panning north or south would jump the map mid drag.
+        // While locked the stored width is exact. Metres per pixel drift a little
+        // as the map pans north or south, until the zoom is pinned again.
         widthM: scaleLocked ? area.widthM : f.window.w * metresPerPixel(c.lat, map.getZoom()),
       };
       fromMap.current = next;
       cancelAnimationFrame(pending);
       pending = requestAnimationFrame(() => setArea(next));
     });
-    // Pinching still zooms while locked, so put the zoom back once it stops.
-    map.on('moveend', () => {
-      const f = frameRef.current;
-      const { area, scaleLocked } = useApp.getState();
-      if (programmatic.current || !f || !scaleLocked) return;
-      const zoom = zoomForMetres(area.lat, area.widthM, f.window.w);
-      if (!Number.isFinite(zoom) || Math.abs(zoom - map.getZoom()) < 1e-3) return;
-      programmatic.current = true;
-      try {
-        map.jumpTo({ zoom });
-      } finally {
-        programmatic.current = false;
-      }
-    });
+    // Zooming does nothing while locked, so point at the lock instead.
+    let nudgeTimer = 0;
+    const nudge = () => {
+      if (!useApp.getState().scaleLocked) return;
+      setNudged(true);
+      clearTimeout(nudgeTimer);
+      nudgeTimer = window.setTimeout(() => setNudged(false), 2500);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '+' || e.key === '-' || e.key === '=') nudge();
+    };
+    container.addEventListener('wheel', nudge, { passive: true });
+    container.addEventListener('keydown', onKey);
+    map.on('dblclick', nudge);
     mapRef.current = map;
     const observer = new ResizeObserver(([entry]) => {
       setSize({ w: entry.contentRect.width, h: entry.contentRect.height });
@@ -140,19 +161,13 @@ export function MapView() {
     return () => {
       observer.disconnect();
       cancelAnimationFrame(pending);
+      clearTimeout(nudgeTimer);
+      container.removeEventListener('wheel', nudge);
+      container.removeEventListener('keydown', onKey);
       map.remove();
       mapRef.current = null;
     };
   }, [setArea]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    for (const handler of [map.scrollZoom, map.doubleClickZoom, map.boxZoom]) {
-      if (scaleLocked) handler.disable();
-      else handler.enable();
-    }
-  }, [scaleLocked]);
 
   // Move the map when the frame changes or the area was set somewhere else
   // (search, presets, typed values). Areas the map reported itself are on screen.
@@ -161,29 +176,45 @@ export function MapView() {
     const map = mapRef.current;
     if (!map || !frame) return;
     const frameChanged = frame !== lastFrame.current;
-    if (!frameChanged && sameArea(fromMap.current, area)) return;
+    const moved = frameChanged || !sameArea(fromMap.current, area);
     lastFrame.current = frame;
+    const zoom = zoomForMetres(area.lat, area.widthM, frame.window.w);
     programmatic.current = true;
     try {
       if (frameChanged) map.resize();
-      const zoom = zoomForMetres(area.lat, area.widthM, frame.window.w);
-      map.jumpTo({
-        center: [area.lon, area.lat],
-        zoom: Number.isFinite(zoom) ? zoom : map.getZoom(),
-        bearing: area.bearing,
-        padding: frame.padding,
-      });
+      pinZoom(map, scaleLocked && Number.isFinite(zoom) ? zoom : null);
+      if (moved) {
+        map.jumpTo({
+          center: [area.lon, area.lat],
+          zoom: Number.isFinite(zoom) ? zoom : map.getZoom(),
+          bearing: area.bearing,
+          padding: frame.padding,
+        });
+      }
     } finally {
       programmatic.current = false;
     }
     fromMap.current = area;
-  }, [frame, area]);
+  }, [frame, area, scaleLocked]);
 
   return (
-    <div className={scaleLocked ? 'map-wrap scale-locked' : 'map-wrap'}>
+    <div className="map-wrap">
       <div ref={containerRef} className="map" />
       {layout && frame ? <Overlay layout={layout} frame={frame} width={size.w} height={size.h} artwork={artwork} /> : null}
-      <div className="map-hint">{scaleLocked ? LOCKED_HINT : HINT}</div>
+      <div className="map-footer">
+        <button
+          type="button"
+          className={scaleLocked ? 'map-scale locked' : 'map-scale'}
+          aria-pressed={scaleLocked}
+          title={scaleLocked ? 'Unlock the scale to zoom again' : 'Lock the scale'}
+          onClick={() => setScaleLocked(!scaleLocked)}
+        >
+          <LockIcon locked={scaleLocked} />
+          1:{scale.toLocaleString()}
+          {scaleLocked && nudged ? <span className="map-scale-note">Scale is locked. Click to unlock</span> : null}
+        </button>
+        <div className="map-hint">{scaleLocked ? LOCKED_HINT : HINT}</div>
+      </div>
       {labelError ? <div className="map-notice notice">{labelError}</div> : null}
     </div>
   );

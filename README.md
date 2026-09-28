@@ -26,6 +26,14 @@ The settings are:
 * Line cleanup removes doubled and crowded lines. See below.
 * Map data sets where the map tiles come from.
 
+## Install & Offline Use
+
+SVGmap can be installed as an app. Chrome, Edge and Android show an `Install` prompt at the bottom of the page. The install button in the address bar or browser menu works too. On an iPhone or iPad, tap `Share` and then `Add to Home Screen`.
+
+The app and the title fonts are saved on the first visit, so it opens without a connection. Map tiles are saved as you use them (the last 500 tiles, for up to 30 days), so areas you've already viewed can be generated again offline. Place search always needs a connection, and tiles from a custom source under Map data aren't saved.
+
+When a new version is deployed, a notice asks you to reload. It never reloads on its own.
+
 ## Output Modes
 
 * Laser: filled areas engrave, lines score and the edge cuts. Every layer gets its own colour so it can get its own process. The `LightBurn layer palette` option uses LightBurn's colours so each layer lands on its own LightBurn layer, and `Minimal` gives three processes (engrave, score, cut).
@@ -76,6 +84,7 @@ Run the tests with `npm test`. The live render test is skipped unless `SVGMAP_NE
 * Only SVG export is supported. There is no DXF.
 * Custom fonts can be TTF, OTF or WOFF. WOFF2 files don't load.
 * The wood preview is only a rough idea of how the fills will look. Test your settings on scrap.
+* On the very first visit, the map style loads before the service worker starts, so it isn't saved until the next visit. Going offline right after a first visit can leave the map blank, but generating still works for tiles that were loaded.
 
 ###### Note: map data is from OpenStreetMap. Credit "© OpenStreetMap contributors" on anything you publish or sell.
 

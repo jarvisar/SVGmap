@@ -655,15 +655,54 @@ button.menu-toggle,
   pointer-events: none;
 }
 
-.scale-locked .maplibregl-ctrl-zoom-in,
-.scale-locked .maplibregl-ctrl-zoom-out {
-  display: none;
+.map-footer {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.map-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.map-scale:hover {
+  background: #f4f4f4;
+}
+
+.map-scale.locked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.map-scale-note {
+  padding-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.5);
 }
 
 .map-hint {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 4px 10px;
   font-size: 12px;
   color: var(--muted);
@@ -770,6 +809,38 @@ button.menu-toggle,
   z-index: 5;
 }
 
+/* ---------------------------------------------------------------- toasts */
+
+.toasts {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  font-size: 13px;
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  pointer-events: auto;
+}
+
+.toast span {
+  margin-right: 4px;
+}
+
 /* ---------------------------------------------------------------- small screens */
 
 @media (max-width: 800px) {
@@ -829,7 +900,7 @@ button.menu-toggle,
   }
 
   /* MapLibre's attribution spans the bottom edge here. */
-  .map-hint {
+  .map-footer {
     bottom: 44px;
   }
 

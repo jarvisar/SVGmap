@@ -153,6 +153,15 @@ export function Slider(props: {
   );
 }
 
+export function LockIcon(props: { locked: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+      <rect x="2.5" y="6.5" width="9" height="6" rx="1" />
+      <path d={props.locked ? 'M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2' : 'M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0'} />
+    </svg>
+  );
+}
+
 export function Check(props: { label: ReactNode; checked: boolean; onChange: (checked: boolean) => void; title?: string }) {
   return (
     <label className="check" title={props.title}>

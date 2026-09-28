@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { PLACE_PRESETS } from '../../engine/presets.ts';
-import { Field, NumberInput, Section, Select, Slider } from '../components/controls.tsx';
+import { Field, LockIcon, NumberInput, Section, Select, Slider } from '../components/controls.tsx';
 import { type Place, searchPlaces } from '../geocode.ts';
 import { scaleOf, useApp } from '../store.ts';
 
@@ -116,13 +116,10 @@ function LockButton(props: { locked: boolean; onChange: (locked: boolean) => voi
       className={props.locked ? 'lock active' : 'lock'}
       aria-label="Lock scale"
       aria-pressed={props.locked}
-      title={props.locked ? 'Scale is locked' : 'Lock scale'}
+      title={props.locked ? 'Unlock the scale' : 'Lock the scale'}
       onClick={() => props.onChange(!props.locked)}
     >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-        <rect x="2.5" y="6.5" width="9" height="6" rx="1" />
-        <path d={props.locked ? 'M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2' : 'M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0'} />
-      </svg>
+      <LockIcon locked={props.locked} />
     </button>
   );
 }
@@ -138,7 +135,7 @@ export function LocationPanel() {
   const km = area.widthM / 1000;
 
   return (
-    <Section title="Location" summary={`1:${scale.toLocaleString()}`} defaultOpen>
+    <Section title="Location" summary={`1:${scale.toLocaleString()}${locked ? ', locked' : ''}`} defaultOpen>
       <Field label="Find a place">
         <PlaceSearch />
       </Field>
@@ -170,6 +167,9 @@ export function LocationPanel() {
           </div>
         </Field>
       </div>
+      {locked ? (
+        <div className="hint">Zooming is off. New places and product sizes keep 1:{scale.toLocaleString()}, and the map width follows.</div>
+      ) : null}
       <Slider
         label="Rotation"
         value={Math.round(area.bearing * 10) / 10}
