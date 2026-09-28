@@ -96,6 +96,10 @@ export function nodeKey(point: Point, quantum: number): number {
   return cellKey(roundHalfEven(point[0] / quantum), roundHalfEven(point[1] / quantum));
 }
 
+// A bigger cell only makes lookups slower, never wrong. A tolerance of zero would
+// otherwise mean billions of cells per segment.
+const MIN_CELL = 0.05;
+
 interface GridSegment {
   a: Point;
   b: Point;
@@ -110,7 +114,7 @@ export class SegmentGrid {
   empty = true;
 
   constructor(paths: Iterable<Path> = [], cell = 1.0) {
-    this.cell = Math.max(cell, 1e-9);
+    this.cell = Math.max(cell, MIN_CELL);
     for (const path of paths) this.add(path);
   }
 
@@ -169,7 +173,7 @@ export class TaggedSegmentIndex {
   private readonly buckets = new Map<number, TaggedSegment[]>();
 
   constructor(paths: readonly Path[], cell: number) {
-    this.cell = Math.max(cell, 1e-9);
+    this.cell = Math.max(cell, MIN_CELL);
     paths.forEach((path, index) => this.addPath(index, path));
   }
 

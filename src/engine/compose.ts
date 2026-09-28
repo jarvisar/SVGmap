@@ -235,12 +235,13 @@ export function compose(
       drafts.push({ id, element, label: name, kind: 'fill', strokeWidth: 0, fill: paths });
       return;
     }
-    const lines: Path[] = [];
+    // concat, not push(...), since fine hatching of a big area is more lines than a call can take.
+    let lines: Path[] = [];
     if (effective === 'hatch' || effective === 'hatch-outline') {
       const h = style.hatch[hatchKey];
-      lines.push(...hatchWith(paths, { ...h, spacing: Math.max(h.spacing, 0.05) }));
+      lines = lines.concat(hatchWith(paths, { ...h, spacing: Math.max(h.spacing, 0.05) }));
     }
-    if (effective === 'outline' || effective === 'hatch-outline') lines.push(...outlines(paths));
+    if (effective === 'outline' || effective === 'hatch-outline') lines = lines.concat(outlines(paths));
     drafts.push({ id, element, label: name, kind: 'stroke', strokeWidth: hairline, lines: [{ paths: lines }] });
   };
 

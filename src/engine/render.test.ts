@@ -96,6 +96,15 @@ describe('rendering a real tile', () => {
     expect(result.groups.find((g) => g.id === 'band')!.strokeWidth).toBe(0.05);
   });
 
+  it('copes with very fine hatching and zero cleanup tolerances', () => {
+    const plotter = defaultRenderSettings('plotter');
+    const hatch = { ...plotter.style.hatch, buildings: { spacing: 0, angle: 45, cross: true } };
+    const fine = render('plotter', { style: { ...plotter.style, hatch } });
+    expect(fine.result.groups.find((g) => g.id === 'buildings')!.subpaths).toBeGreaterThan(1000);
+    const loose = render('laser', { cleanup: { ...plotter.cleanup, lineSpacing: -1, weldTolerance: 0, snapGap: 0 } });
+    expect(loose.result.groups.some((g) => g.id === 'roads')).toBe(true);
+  });
+
   it('refuses a map width of zero', () => {
     const settings = defaultRenderSettings('laser');
     const layout = computeLayout(settings.product, settings.border);
