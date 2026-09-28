@@ -1,0 +1,25 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Local scratch left behind by the Python/Blender pipeline this repository was
+# copied from. None of it is part of the web app, and all of it is safe to delete.
+/__pycache__/
+/_tmp_*
+/test_addon_output/
+/test_exporter_*out.svg
+/jarvizar_laser_maps/
+
+
+CLAUDE.md
+AGENTS.md
