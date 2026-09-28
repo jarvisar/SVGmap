@@ -7,6 +7,7 @@ import type { AreaSpec } from '../../engine/geo/transform.ts';
 import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
 import { bandPathD, shapePathD } from '../../engine/layout/shapes.ts';
 import { polylineD } from '../../engine/svg/format.ts';
+import type { LabelArtwork } from '../../engine/text/label.ts';
 import { useApp } from '../store.ts';
 import { useLabelArtwork } from './useLabelArtwork.ts';
 
@@ -14,6 +15,10 @@ const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
 
 // MapLibre cannot find its own worker inside a bundle.
 setWorkerUrl(maplibreWorker);
+
+const HINT = matchMedia('(pointer: coarse)').matches
+  ? 'Drag to move, pinch to zoom, twist to rotate'
+  : 'Drag to move, scroll to zoom, right-drag to rotate';
 
 interface Frame {
   // px per mm
@@ -40,7 +45,8 @@ function fitFrame(layout: Layout, width: number, height: number): Frame {
     ox,
     oy,
     window: { x, y, w, h },
-    padding: { left: x, top: y, right: Math.max(0, width - x - w), bottom: Math.max(0, height - y - h) },
+    // MapLibre throws on negative padding.
+    padding: { left: Math.max(0, x), top: Math.max(0, y), right: Math.max(0, width - x - w), bottom: Math.max(0, height - y - h) },
   };
 }
 
@@ -75,7 +81,7 @@ export function MapView() {
   }, [product, border]);
   const frame = useMemo(() => (layout && size.w > 0 ? fitFrame(layout, size.w, size.h) : null), [layout, size]);
   frameRef.current = frame;
-  const artwork = useLabelArtwork(layout, label, customFontName);
+  const { artwork, error: labelError } = useLabelArtwork(layout, label, customFontName);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -133,9 +139,10 @@ export function MapView() {
     programmatic.current = true;
     try {
       if (frameChanged) map.resize();
+      const zoom = zoomForMetres(area.lat, area.widthM, frame.window.w);
       map.jumpTo({
         center: [area.lon, area.lat],
-        zoom: zoomForMetres(area.lat, area.widthM, frame.window.w),
+        zoom: Number.isFinite(zoom) ? zoom : map.getZoom(),
         bearing: area.bearing,
         padding: frame.padding,
       });
@@ -146,31 +153,25 @@ export function MapView() {
   }, [frame, area]);
 
   return (
-    <div className="map-wrap" style={{ position: 'absolute', inset: 0 }}>
+    <div className="map-wrap">
       <div ref={containerRef} className="map" />
       {layout && frame ? <Overlay layout={layout} frame={frame} width={size.w} height={size.h} artwork={artwork} /> : null}
-      <div className="map-hint">Drag to move, scroll to zoom, right-drag to rotate</div>
+      <div className="map-hint">{HINT}</div>
+      {labelError ? <div className="map-notice notice">{labelError}</div> : null}
     </div>
   );
 }
 
-function Overlay(props: {
-  layout: Layout;
-  frame: Frame;
-  width: number;
-  height: number;
-  artwork: ReturnType<typeof useLabelArtwork>;
-}) {
+function Overlay(props: { layout: Layout; frame: Frame; width: number; height: number; artwork: LabelArtwork | null }) {
   const { layout, frame, width, height, artwork } = props;
   const s = frame.scale;
   const outside = `M${-frame.ox / s},${-frame.oy / s}h${width / s}v${height / s}h${-width / s}Z`;
-  const text = artwork
-    ? [...artwork.text.rings.map((r) => polylineD(r, true)), ...artwork.text.strokes.map((p) => polylineD(p))].join('')
-    : '';
+  const rings = artwork ? artwork.text.rings.map((r) => polylineD(r, true)).join('') : '';
+  const strokes = artwork ? artwork.text.strokes.map((p) => polylineD(p)).join('') : '';
   return (
     <svg className="map-overlay" width={width} height={height}>
       <g transform={`translate(${frame.ox} ${frame.oy}) scale(${s})`}>
-        <path d={outside + shapePathD(layout.canvas, [0, 0], true)} fill="rgba(40,40,40,0.35)" />
+        <path d={outside + shapePathD(layout.canvas, true)} fill="rgba(40,40,40,0.35)" />
         <path d={bandPathD(layout.canvas, layout.window)} fill="rgba(255,255,255,0.82)" />
         {layout.thickBand ? (
           <path d={bandPathD(layout.thickBand.outer, layout.thickBand.inner)} fill="rgba(0,0,0,0.45)" />
@@ -191,9 +192,9 @@ function Overlay(props: {
             {artwork.frame.map((seg, i) => (
               <path key={i} d={polylineD(seg)} stroke="rgba(0,0,0,0.6)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
             ))}
-            {artwork.text.rings.length ? <path d={text} fill="rgba(0,0,0,0.75)" fillRule="nonzero" /> : null}
-            {artwork.text.strokes.length ? (
-              <path d={text} fill="none" stroke="rgba(0,0,0,0.75)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
+            {rings ? <path d={rings} fill="rgba(0,0,0,0.75)" fillRule="nonzero" /> : null}
+            {strokes ? (
+              <path d={strokes} fill="none" stroke="rgba(0,0,0,0.75)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
             ) : null}
           </g>
         ) : null}

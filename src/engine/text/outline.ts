@@ -1,7 +1,7 @@
 // Text as geometry. Laser software doesn't read fonts, so letters always leave
 // here as outlines or single-line strokes, never as SVG text.
 // Coordinates are y down at a size of one em, baseline at 0.
-import { parse, type Font, type PathCommand } from 'opentype.js';
+import type { Font, PathCommand } from 'opentype.js';
 import type { Path, Point } from '../lines/geometry.ts';
 import type { StrokeFont } from './hershey.ts';
 
@@ -13,10 +13,6 @@ export interface TextGeometry {
 }
 
 export type LoadedFont = { kind: 'outline'; font: Font } | { kind: 'stroke'; font: StrokeFont };
-
-export function parseOutlineFont(buffer: ArrayBuffer): LoadedFont {
-  return { kind: 'outline', font: parse(buffer) };
-}
 
 function flattenCommands(commands: PathCommand[], tolerance: number): Path[] {
   const rings: Path[] = [];

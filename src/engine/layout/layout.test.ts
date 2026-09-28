@@ -37,6 +37,10 @@ describe('layout', () => {
     const product = { ...preset('coaster-100'), margins: { top: 49, right: 49, bottom: 49, left: 49 } };
     expect(() => computeLayout(product, DEFAULT_BORDER)).toThrow(LayoutError);
   });
+
+  it('refuses negative border sizes', () => {
+    expect(() => computeLayout(preset('plaque-5x7'), { ...DEFAULT_BORDER, innerGap: -1 })).toThrow(LayoutError);
+  });
 });
 
 describe('shapes', () => {

@@ -14,7 +14,6 @@ export type LayerId = FillLayerId | LineLayerId;
 // Draw order, bottom to top.
 export const FILL_LAYERS: FillLayerId[] = ['water', 'greens', 'sand', 'rocks', 'aeroways', 'decks', 'buildings'];
 export const LINE_LAYERS: LineLayerId[] = ['waterways', 'railways', 'paths', 'roads', 'raceways'];
-export const ALL_LAYERS: LayerId[] = [...FILL_LAYERS, ...LINE_LAYERS];
 
 export const LAYER_NAMES: Record<LayerId, string> = {
   water: 'Water',
@@ -188,7 +187,7 @@ export const MINIMAL_COLORS: Record<ElementId, string> = {
 };
 
 export const LASER_PALETTES = {
-  distinct: { name: 'Distinct colours (Bambu Suite, most software)', colors: LASER_COLORS },
+  distinct: { name: 'Distinct colours (most software)', colors: LASER_COLORS },
   lightburn: { name: 'LightBurn layer palette', colors: LIGHTBURN_COLORS },
   minimal: { name: 'Minimal: engrave / score / cut', colors: MINIMAL_COLORS },
 } as const;

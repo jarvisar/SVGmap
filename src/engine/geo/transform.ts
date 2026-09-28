@@ -3,7 +3,7 @@
 // centre latitude, the same way the on-screen map draws it, so the export
 // matches what was framed.
 import type { Point } from '../lines/geometry.ts';
-import { lonLatToWorld, metresPerUnit, worldToLonLat } from './mercator.ts';
+import { lonLatToWorld, metresPerUnit } from './mercator.ts';
 
 export interface AreaSpec {
   lon: number;
@@ -63,9 +63,4 @@ export function makeTransform(
       return [cx + u * cos - v * sin, cy + u * sin + v * cos];
     },
   };
-}
-
-export function canvasToLonLat(transform: MapTransform, x: number, y: number) {
-  const [wx, wy] = transform.toWorld(x, y);
-  return worldToLonLat(wx, wy, transform.zoom);
 }

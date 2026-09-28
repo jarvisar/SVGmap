@@ -1,10 +1,17 @@
+// The only module that imports opentype.js at runtime, so the main thread can
+// load it on demand.
+import { parse } from 'opentype.js';
 import { CUSTOM_FONT_ID, fontInfo } from './fonts.ts';
 import { type HersheyFile, parseHershey } from './hershey.ts';
-import { type LoadedFont, parseOutlineFont } from './outline.ts';
+import type { LoadedFont } from './outline.ts';
 
 export interface CustomFont {
   name: string;
   data: ArrayBuffer;
+}
+
+export function parseOutlineFont(buffer: ArrayBuffer): LoadedFont {
+  return { kind: 'outline', font: parse(buffer) };
 }
 
 export class FontLoader {
@@ -18,24 +25,23 @@ export class FontLoader {
   load(id: string, custom: CustomFont | null | undefined): Promise<LoadedFont> {
     if (id === CUSTOM_FONT_ID) {
       if (!custom) return Promise.reject(new Error('Load a font file to use a custom font.'));
-      const key = `custom:${custom.name}:${custom.data.byteLength}`;
-      let pending = this.cache.get(key);
-      if (!pending) {
-        pending = Promise.resolve().then(() => parseOutlineFont(custom.data.slice(0)));
-        this.cache.set(key, pending);
-      }
-      return pending;
+      return this.cached(`custom:${custom.name}:${custom.data.byteLength}`, async () => parseOutlineFont(custom.data.slice(0)));
     }
     const info = fontInfo(id) ?? fontInfo('montserrat')!;
-    let pending = this.cache.get(info.id);
+    return this.cached(info.id, async () => {
+      const buffer = await this.loadAsset(info.file);
+      if (info.kind === 'outline') return parseOutlineFont(buffer);
+      return { kind: 'stroke', font: parseHershey(JSON.parse(new TextDecoder().decode(buffer)) as HersheyFile) };
+    });
+  }
+
+  // A failed load is forgotten so the next render can try again.
+  private cached(key: string, load: () => Promise<LoadedFont>): Promise<LoadedFont> {
+    let pending = this.cache.get(key);
     if (!pending) {
-      pending = this.loadAsset(info.file).then((buffer) =>
-        info.kind === 'stroke'
-          ? { kind: 'stroke' as const, font: parseHershey(JSON.parse(new TextDecoder().decode(buffer)) as HersheyFile) }
-          : parseOutlineFont(buffer),
-      );
-      pending.catch(() => this.cache.delete(info.id));
-      this.cache.set(info.id, pending);
+      pending = load();
+      pending.catch(() => this.cache.delete(key));
+      this.cache.set(key, pending);
     }
     return pending;
   }

@@ -124,7 +124,7 @@ function nudgeInside(limit: Shape, x: number, y: number, w: number, h: number): 
 
 export function layoutBoxLabel(layout: Layout, s: LabelSettings, text: TextGeometry): LabelArtwork {
   const bounds = geometryBounds(text);
-  if (!bounds) throw new LabelError('The label font produced no visible lettering.');
+  if (!bounds) throw new LabelError('The title font has no visible letters for this text.');
   const [minX, minY, maxX, maxY] = bounds;
   const rawW = maxX - minX;
   const rawH = maxY - minY;
@@ -162,7 +162,7 @@ export function layoutBoxLabel(layout: Layout, s: LabelSettings, text: TextGeome
   const start = positions[s.position] ?? positions.lower_right;
   const placed = nudgeInside(limit, start[0], start[1], boxW, boxH);
   if (!placed || boxW > limit.w || boxH > limit.h) {
-    throw new LabelError('The label does not fit inside the border. Reduce its size or shorten the text.');
+    throw new LabelError('The title does not fit inside the border. Make it smaller or shorten the text.');
   }
   const [left, top] = placed;
   const cx = left + boxW / 2;

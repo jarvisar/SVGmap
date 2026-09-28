@@ -9,7 +9,7 @@ export interface RenderState {
   progress: RenderProgress | null;
   result: RenderResult | null;
   error: string | null;
-  // The settings the current result was made from, as a string to compare.
+  // The settings the current result or error came from, as a string to compare.
   renderedKey: string | null;
 }
 
@@ -22,40 +22,33 @@ export const useRender = create<RenderState>(() => ({
 }));
 
 let worker: Worker | null = null;
-let nextId = 0;
-const keys = new Map<number, string>();
+// Only the newest request matters. The worker drops older ones and anything
+// they still send is ignored here.
+let latestId = 0;
+let latestKey: string | null = null;
 
 function getWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('../worker/render.worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
     const message = event.data;
-    if (message.id !== nextId) return; // a newer request superseded this one
-    switch (message.type) {
-      case 'progress':
-        useRender.setState({ progress: message.progress });
-        break;
-      case 'result':
-        useRender.setState({
-          status: 'done',
-          result: message.result,
-          error: null,
-          progress: null,
-          renderedKey: keys.get(message.id) ?? null,
-        });
-        keys.delete(message.id);
-        break;
-      case 'error':
-        useRender.setState({ status: 'error', error: message.message, progress: null, renderedKey: keys.get(message.id) ?? null });
-        keys.delete(message.id);
-        break;
-      case 'cancelled':
-        keys.delete(message.id);
-        break;
+    if (message.id !== latestId) return;
+    if (message.type === 'progress') {
+      useRender.setState({ progress: message.progress });
+    } else if (message.type === 'result') {
+      useRender.setState({ status: 'done', result: message.result, error: null, progress: null, renderedKey: latestKey });
+    } else {
+      useRender.setState({ status: 'error', error: message.message, progress: null, renderedKey: latestKey });
     }
   };
   worker.onerror = (event) => {
-    useRender.setState({ status: 'error', error: event.message || 'The renderer stopped unexpectedly.', progress: null });
+    // renderedKey is set so the live preview doesn't retry in a loop. Generate still retries.
+    useRender.setState({
+      status: 'error',
+      error: event.message || 'The renderer stopped unexpectedly.',
+      progress: null,
+      renderedKey: latestKey,
+    });
     worker?.terminate();
     worker = null;
   };
@@ -67,8 +60,10 @@ export function settingsKey(settings: RenderSettings, customFont: CustomFont | n
 }
 
 export function requestRender(settings: RenderSettings, customFont: CustomFont | null): void {
-  const id = ++nextId;
-  keys.set(id, settingsKey(settings, customFont));
+  const key = settingsKey(settings, customFont);
+  if (key === latestKey && useRender.getState().status === 'working') return;
+  latestKey = key;
+  const id = ++latestId;
   useRender.setState({ status: 'working', error: null, progress: { stage: 'tiles', message: 'Starting' } });
   const message: WorkerRequest = {
     type: 'render',

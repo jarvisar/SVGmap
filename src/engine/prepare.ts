@@ -38,12 +38,17 @@ export interface TilePlan {
 export class AreaTooLargeError extends Error {}
 
 const MIN_ZOOM = 10;
+// Same as the most the UI allows. Settings from a share link can't ask for more.
+const TILE_LIMIT = 2000;
 
 // Steps down a zoom level at a time for areas that would need more than maxTiles.
 export function planTiles(area: AreaSpec, layout: Layout, source: SourceSettings): TilePlan {
+  // Zero would put every point at infinity, which Clipper never finishes with.
+  if (!(area.widthM > 0 && Number.isFinite(area.widthM))) throw new Error('The map width has to be more than zero.');
   const window = layout.window;
   const corners = shapePolygon({ ...window, kind: 'rect', r: 0 });
   const warnings: string[] = [];
+  const maxTiles = Math.min(source.maxTiles, TILE_LIMIT);
   const top = Math.min(14, Math.max(MIN_ZOOM, Math.round(source.maxZoom)));
   for (let zoom = top; zoom >= MIN_ZOOM; zoom--) {
     const transform = makeTransform(area, zoom, shapeCentre(window), window.w);
@@ -54,7 +59,7 @@ export function planTiles(area: AreaSpec, layout: Layout, source: SourceSettings
     const y0 = Math.max(0, Math.floor(minY / TILE_EXTENT));
     const y1 = Math.min(2 ** zoom - 1, Math.floor(maxY / TILE_EXTENT));
     const count = (x1 - x0 + 1) * (y1 - y0 + 1);
-    if (count > source.maxTiles) continue;
+    if (count > maxTiles) continue;
     const tiles: TileId[] = [];
     const n = 2 ** zoom;
     for (let y = y0; y <= y1; y++) {
@@ -62,7 +67,7 @@ export function planTiles(area: AreaSpec, layout: Layout, source: SourceSettings
     }
     if (zoom < top) {
       warnings.push(
-        `This area needs more than ${source.maxTiles} tiles at full detail, so it uses zoom ${zoom} data: small features may be simplified or missing.`,
+        `This area needs more than ${maxTiles} tiles at full detail, so it uses zoom ${zoom} data. Small features may be simplified or missing.`,
       );
     }
     const widthM = area.widthM;
@@ -129,6 +134,10 @@ export function prepareArea(plan: TilePlan, layout: Layout, data: TileData): Pre
   let bytes = 0;
   const warnings = [...plan.warnings];
   let missing = 0;
+  // Tiles past the antimeridian are fetched with a wrapped x, so each one goes
+  // on the copy of the world nearest the map centre.
+  const worldTiles = 2 ** plan.zoom;
+  const centreTile = transform.cx / TILE_EXTENT;
 
   for (const tile of plan.tiles) {
     const key = tileKey(tile);
@@ -139,7 +148,8 @@ export function prepareArea(plan: TilePlan, layout: Layout, data: TileData): Pre
     const buffer = data.get(key);
     if (!buffer) continue; // an empty tile: nothing mapped there
     bytes += buffer.byteLength;
-    const decoded = decodeTile(buffer, tile.x, tile.y);
+    const x = tile.x + worldTiles * Math.round((centreTile - tile.x) / worldTiles);
+    const decoded = decodeTile(buffer, x, tile.y);
     for (const line of decoded.lines) {
       if (line.layer === 'aeroway') {
         const widthM = aerowayLineWidth(line.props);

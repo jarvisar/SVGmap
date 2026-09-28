@@ -39,96 +39,11 @@ function mostlyShadowed(hits: number, samples: number): boolean {
   return hits * 5 >= samples * 3;
 }
 
-export function cullAgainstGrid(
-  paths: readonly Path[],
-  grid: SegmentGrid,
-  minSeparation: number,
-  maxAngleDeg = 30,
-  minRunLength = 0,
-): { kept: Path[]; removedLength: number } {
-  if (paths.length === 0 || minSeparation <= 0 || grid.empty) {
-    return { kept: [...paths], removedLength: 0 };
-  }
-  const thresholdSq = minSeparation * minSeparation;
-  const cosLimit = Math.cos((maxAngleDeg * Math.PI) / 180);
-  let kept: Path[] = [];
-  let removedLength = 0;
-
-  for (const path of paths) {
-    let run: Path = [];
-    for (let i = 1; i < path.length; i++) {
-      const a = path[i - 1];
-      const b = path[i];
-      const dir = unit(a, b);
-      if (dir === null) continue;
-      const { hits, samples } = shadowed(a, b, dir, grid, thresholdSq, cosLimit, minSeparation);
-      if (mostlyShadowed(hits, samples)) {
-        if (run.length >= 2) kept.push(run);
-        run = [];
-        removedLength += Math.hypot(b[0] - a[0], b[1] - a[1]);
-        continue;
-      }
-      if (run.length === 0) run = [a, b];
-      else run.push(b);
-    }
-    if (run.length >= 2) kept.push(run);
-  }
-
-  if (minRunLength > 0) {
-    const trimmed: Path[] = [];
-    for (const path of kept) {
-      const length = pathLength(path);
-      if (length >= minRunLength) trimmed.push(path);
-      else removedLength += length;
-    }
-    kept = trimmed;
-  }
-  return { kept, removedLength };
-}
-
-export function cullOverlapping(
-  paths: readonly Path[],
-  against: readonly Path[] | SegmentGrid,
-  minSeparation: number,
-  maxAngleDeg = 30,
-  minRunLength = 0,
-): { kept: Path[]; removedLength: number } {
-  const empty = against instanceof SegmentGrid ? against.empty : against.length === 0;
-  if (paths.length === 0 || empty || minSeparation <= 0) {
-    return { kept: [...paths], removedLength: 0 };
-  }
-  const grid = against instanceof SegmentGrid ? against : new SegmentGrid(against, minSeparation);
-  return cullAgainstGrid(paths, grid, minSeparation, maxAngleDeg, minRunLength);
-}
-
-// Removes geometry duplicated within one group, like two ways drawn along the same street.
-export function cullSelfDuplicates(
-  paths: readonly Path[],
-  minSeparation: number,
-  maxAngleDeg = 15,
-): { kept: Path[]; removedLength: number } {
-  if (minSeparation <= 0 || paths.length < 2) return { kept: [...paths], removedLength: 0 };
-  const grid = new SegmentGrid([], minSeparation);
-  const kept: Path[] = [];
-  let removedLength = 0;
-  const ordered = [...paths].sort((p, q) => q.length - p.length);
-  for (const path of ordered) {
-    const result = cullAgainstGrid([path], grid, minSeparation, maxAngleDeg);
-    removedLength += result.removedLength;
-    for (const survivor of result.kept) {
-      grid.add(survivor);
-      kept.push(survivor);
-    }
-  }
-  return { kept, removedLength };
-}
-
 export interface CullRankedOptions<K> {
   maxAngleDeg?: number;
   // Keep or drop each path whole. Can depend on the item's key.
   wholePaths?: boolean | ((key: K) => boolean);
   shadowFraction?: number;
-  minRunLength?: number;
 }
 
 export interface CullStats {
@@ -159,7 +74,6 @@ export function cullRanked<K>(
   const maxAngleDeg = options.maxAngleDeg ?? 30;
   const wholePaths = options.wholePaths ?? true;
   const shadowFraction = options.shadowFraction ?? 0.7;
-  const minRunLength = options.minRunLength ?? 0;
 
   const lengths = new Map<LineItem<K>, number>();
   for (const item of items) lengths.set(item, pathLength(item.path));
@@ -231,13 +145,6 @@ export function cullRanked<K>(
 
     if (pieces.length !== 1 || !samePath(pieces[0], path)) stats.trimmed++;
     for (const piece of pieces) {
-      if (minRunLength > 0) {
-        const length = pathLength(piece);
-        if (length < minRunLength) {
-          stats.removedLength += length;
-          continue;
-        }
-      }
       kept.push({ rank: item.rank, key: item.key, path: piece });
       grid.add(piece);
     }

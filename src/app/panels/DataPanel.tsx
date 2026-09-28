@@ -11,7 +11,8 @@ export function DataPanel() {
       <TextField
         label="Tile source"
         value={source.tiles}
-        onChange={(tiles) => set({ source: { ...source, tiles } })}
+        commitOnBlur
+        onChange={(tiles) => set({ source: { ...source, tiles: tiles.trim() || DEFAULT_SOURCE.tiles } })}
         hint="A TileJSON URL, a {z}/{x}/{y} template or a .pmtiles file. It has to use the OpenMapTiles schema."
       />
       {custom ? (

@@ -6,8 +6,7 @@ export type WorkerRequest = { type: 'render'; id: number; baseUrl: string; reque
 export type WorkerResponse =
   | { type: 'progress'; id: number; progress: RenderProgress }
   | { type: 'result'; id: number; result: RenderResult }
-  | { type: 'error'; id: number; message: string }
-  | { type: 'cancelled'; id: number };
+  | { type: 'error'; id: number; message: string };
 
 const scope = self as unknown as {
   postMessage(message: WorkerResponse): void;
@@ -30,18 +29,19 @@ scope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id } = message;
   latest = id;
   baseUrl = message.baseUrl;
+  // A newer request replaces this one, and the page only listens for the newest.
+  const current = () => id === latest;
   try {
     const result = await service.render(
       message.request,
       (progress) => {
-        if (id === latest) post({ type: 'progress', id, progress });
+        if (current()) post({ type: 'progress', id, progress });
       },
-      () => id !== latest,
+      () => !current(),
     );
-    if (id === latest) post({ type: 'result', id, result });
-    else post({ type: 'cancelled', id });
+    if (current()) post({ type: 'result', id, result });
   } catch (error) {
-    if (error instanceof CancelledError) post({ type: 'cancelled', id });
-    else post({ type: 'error', id, message: error instanceof Error ? error.message : String(error) });
+    if (error instanceof CancelledError || !current()) return;
+    post({ type: 'error', id, message: error instanceof Error ? error.message : String(error) });
   }
 };

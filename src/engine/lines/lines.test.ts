@@ -5,9 +5,7 @@ import {
   type Path,
   type Point,
   collapseFilledLoops,
-  cullOverlapping,
   cullRanked,
-  cullSelfDuplicates,
   lineCoverage,
   pathLength,
   pointSegmentDistanceSq,
@@ -34,64 +32,49 @@ describe('overlap culling', () => {
     [0, 0],
     [100, 0],
   ];
+  // A footpath tested segment by segment against a road that is already kept.
+  const cullPath = (path: Path) => {
+    const { kept, stats } = cullRanked([item(0, 'road', road), item(11, 'path', path)], 0.5, { wholePaths: false });
+    return { kept: kept.filter((i) => i.key === 'path').map((i) => i.path), removedLength: stats.removedLength };
+  };
 
   it('culls a parallel sidewalk', () => {
-    const { kept } = cullOverlapping([[[0, 0.3], [100, 0.3]]], [road], 0.5);
-    expect(kept).toHaveLength(0);
+    expect(cullPath([[0, 0.3], [100, 0.3]]).kept).toHaveLength(0);
   });
 
   it('keeps a well-separated path', () => {
-    const { kept, removedLength } = cullOverlapping([[[0, 2], [100, 2]]], [road], 0.5);
+    const { kept, removedLength } = cullPath([[0, 2], [100, 2]]);
     expect(kept).toHaveLength(1);
     expect(removedLength).toBe(0);
   });
 
   it('keeps a perpendicular approach intact', () => {
-    const { kept } = cullOverlapping([[[50, 30], [50, 0]]], [road], 0.5);
+    const { kept } = cullPath([[50, 30], [50, 0]]);
     expect(kept).toHaveLength(1);
     expect(totalLength(kept)).toBeCloseTo(30, 6);
   });
 
   it('keeps both halves of a path crossing a road', () => {
-    const { kept } = cullOverlapping([[[50, -20], [50, 20]]], [road], 0.5);
-    expect(totalLength(kept)).toBeCloseTo(40, 6);
+    expect(totalLength(cullPath([[50, -20], [50, 20]]).kept)).toBeCloseTo(40, 6);
   });
 
   it('culls only the parallel leg of an elbow', () => {
-    const { kept, removedLength } = cullOverlapping([[[0, 0.3], [60, 0.3], [60, 40]]], [road], 0.5);
+    const { kept, removedLength } = cullPath([[0, 0.3], [60, 0.3], [60, 40]]);
     expect(Math.abs(totalLength(kept) - 40)).toBeLessThan(0.5);
     expect(Math.abs(removedLength - 60)).toBeLessThan(0.5);
   });
 
   it('does not cull a steeply angled line', () => {
-    const { kept } = cullOverlapping([[[40, 0.2], [60, 0.2 + 34.6]]], [road], 0.5, 30);
-    expect(kept).toHaveLength(1);
-  });
-
-  it('sweeps up a tiny orphan stub with minRunLength', () => {
-    const { kept } = cullOverlapping([[[10, 5], [10.05, 5]]], [road], 0.5, 30, 0.5);
-    expect(kept).toHaveLength(0);
+    expect(cullPath([[40, 0.2], [60, 0.2 + 34.6]]).kept).toHaveLength(1);
   });
 
   it('collapses duplicate geometry within one group', () => {
-    const { kept } = cullSelfDuplicates(
-      [
-        [[0, 0], [50, 0]],
-        [[0, 0.01], [50, 0.01]],
-      ],
-      0.2,
-    );
+    const { kept } = cullRanked([item(6, 'a', [[0, 0], [50, 0]]), item(6, 'b', [[0, 0.01], [50, 0.01]])], 0.2);
     expect(kept).toHaveLength(1);
   });
 
   it('keeps distinct parallel roads', () => {
-    const { kept } = cullSelfDuplicates(
-      [
-        [[0, 0], [50, 0]],
-        [[0, 10], [50, 10]],
-      ],
-      0.2,
-    );
+    const { kept } = cullRanked([item(6, 'a', [[0, 0], [50, 0]]), item(6, 'b', [[0, 10], [50, 10]])], 0.2);
     expect(kept).toHaveLength(2);
   });
 });

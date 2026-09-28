@@ -1,6 +1,7 @@
 import { LASER_PALETTES, type OutputMode, PRINT_THEMES } from '../../engine/settings.ts';
 import { Check, ColorInput, Field, NumberField, Section, Segmented, SelectField } from '../components/controls.tsx';
-import { type LaserPalette, useApp } from '../store.ts';
+import type { LaserPalette } from '../settings.ts';
+import { useApp } from '../store.ts';
 
 const MODE_NAMES: Record<OutputMode, string> = { laser: 'Laser', plotter: 'Plotter', print: 'Print' };
 

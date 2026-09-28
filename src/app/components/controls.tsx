@@ -32,34 +32,47 @@ export function Field(props: { label: string; hint?: ReactNode; children: ReactN
   );
 }
 
-const round = (value: number, step: number) => {
-  const decimals = Math.max(0, Math.min(6, Math.ceil(-Math.log10(step))));
-  return Number(value.toFixed(decimals));
-};
+// Up to three decimals, or more if the step needs them.
+function format(value: number, step: number): string {
+  const decimals = Math.min(6, Math.max(3, (String(step).split('.')[1] ?? '').length));
+  return String(Number(value.toFixed(decimals)));
+}
 
-// Commits on Enter or blur so typing isn't interrupted by clamping.
+// Drops float noise like 0.30000000000000004 after stepping.
+const tidy = (value: number) => Number(value.toFixed(9));
+
+// Commits on Enter or blur so typing isn't interrupted by clamping. scale shows
+// the value multiplied, e.g. 100 to edit a fraction as a percentage. min, max
+// and step are in the shown units.
 export function NumberInput(props: {
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
   step?: number;
+  scale?: number;
   unit?: string;
   label?: string;
 }) {
   const step = props.step ?? 0.1;
-  const [text, setText] = useState(String(round(props.value, step)));
-  useEffect(() => setText(String(round(props.value, step))), [props.value, step]);
-  const commit = () => {
-    const parsed = Number(text.replace(',', '.'));
-    if (!Number.isFinite(parsed)) {
-      setText(String(round(props.value, step)));
-      return;
-    }
-    const clamped = Math.min(props.max ?? Infinity, Math.max(props.min ?? -Infinity, parsed));
-    if (clamped !== props.value) props.onChange(clamped);
-    setText(String(round(clamped, step)));
+  const scale = props.scale ?? 1;
+  const shown = format(props.value * scale, step);
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+
+  const change = (value: number) => {
+    const next = Math.min(props.max ?? Infinity, Math.max(props.min ?? -Infinity, value));
+    if (next !== Number(shown)) props.onChange(tidy(next / scale));
+    setText(format(next, step));
   };
+  const commit = () => {
+    // Tabbing through a field shouldn't round what's stored.
+    if (text === shown) return;
+    const parsed = Number(text.replace(',', '.'));
+    if (text.trim() === '' || !Number.isFinite(parsed)) setText(shown);
+    else change(parsed);
+  };
+
   return (
     <div className="input-unit">
       <input
@@ -73,8 +86,7 @@ export function NumberInput(props: {
           if (e.key === 'Enter') commit();
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
-            const next = round(props.value + (e.key === 'ArrowUp' ? step : -step), step);
-            props.onChange(Math.min(props.max ?? Infinity, Math.max(props.min ?? -Infinity, next)));
+            change(tidy(Number(shown) + (e.key === 'ArrowUp' ? step : -step)));
           }
         }}
       />
@@ -90,6 +102,7 @@ export function NumberField(props: {
   min?: number;
   max?: number;
   step?: number;
+  scale?: number;
   unit?: string;
   hint?: ReactNode;
 }) {
@@ -100,6 +113,7 @@ export function NumberField(props: {
   );
 }
 
+// The number box next to the slider can go past the slider's range.
 export function Slider(props: {
   label: string;
   value: number;
@@ -107,9 +121,11 @@ export function Slider(props: {
   min: number;
   max: number;
   step: number;
+  scale?: number;
   unit?: string;
   hint?: ReactNode;
 }) {
+  const scale = props.scale ?? 1;
   return (
     <Field label={props.label} hint={props.hint}>
       <div className="slider">
@@ -119,10 +135,17 @@ export function Slider(props: {
           min={props.min}
           max={props.max}
           step={props.step}
-          value={props.value}
-          onChange={(e) => props.onChange(Number(e.target.value))}
+          value={props.value * scale}
+          onChange={(e) => props.onChange(tidy(Number(e.target.value) / scale))}
         />
-        <NumberInput value={props.value} onChange={props.onChange} step={props.step} unit={props.unit} label={props.label} />
+        <NumberInput
+          value={props.value}
+          onChange={props.onChange}
+          step={props.step}
+          scale={scale}
+          unit={props.unit}
+          label={props.label}
+        />
       </div>
     </Field>
   );
@@ -216,17 +239,36 @@ export function SelectField<T extends string>(props: {
   );
 }
 
-export function TextField(props: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; hint?: ReactNode }) {
+// commitOnBlur waits for Enter or blur, for values that are expensive to apply
+// half typed, like a URL.
+export function TextField(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  hint?: ReactNode;
+  commitOnBlur?: boolean;
+}) {
   const id = useId();
+  const [text, setText] = useState(props.value);
+  useEffect(() => setText(props.value), [props.value]);
+  const commit = () => {
+    if (text !== props.value) props.onChange(text);
+  };
   return (
     <div className="field">
       <label htmlFor={id}>{props.label}</label>
       <input
         id={id}
         className="input"
-        value={props.value}
+        value={text}
         placeholder={props.placeholder}
-        onChange={(e) => props.onChange(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          if (!props.commitOnBlur) props.onChange(e.target.value);
+        }}
+        onBlur={props.commitOnBlur ? commit : undefined}
+        onKeyDown={props.commitOnBlur ? (e) => e.key === 'Enter' && commit() : undefined}
       />
       {props.hint ? <div className="hint">{props.hint}</div> : null}
     </div>

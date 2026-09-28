@@ -64,6 +64,10 @@ export function computeLayout(product: ProductSettings, border: BorderSettings):
   }
   const artwork = insetShape(canvas, m);
   if (artwork.w < 5 || artwork.h < 5) throw new LayoutError('The margins leave no room for the map.');
+  const b = border;
+  if ([b.outerGap, b.thick, b.gap, b.thin, b.innerGap].some((v) => !(v >= 0))) {
+    throw new LayoutError('Border sizes cannot be negative.');
+  }
 
   let thickBand: Layout['thickBand'] = null;
   let thinLine: Shape | null = null;

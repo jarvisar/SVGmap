@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { computeLayout } from '../../engine/layout/layout.ts';
 import { PLACE_PRESETS } from '../../engine/presets.ts';
 import { Field, NumberInput, Section, Select, Slider } from '../components/controls.tsx';
@@ -18,15 +18,18 @@ function PlaceSearch() {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
   const abort = useRef<AbortController | null>(null);
+  // The name of the place just picked, which doesn't need searching again.
+  const picked = useRef('');
+  const listId = useId();
 
   useEffect(() => {
-    if (query.trim().length < 3) {
+    abort.current?.abort();
+    if (query.trim().length < 3 || query === picked.current) {
       setResults([]);
       setMessage('');
       return;
     }
     const timer = setTimeout(() => {
-      abort.current?.abort();
       const controller = new AbortController();
       abort.current = controller;
       searchPlaces(query, controller.signal)
@@ -45,10 +48,12 @@ function PlaceSearch() {
   const choose = (place: Place) => {
     setArea({ lon: place.lon, lat: place.lat, widthM: place.widthM, bearing: 0 });
     setLabel({ text: place.name.toUpperCase() });
+    picked.current = place.name;
     setQuery(place.name);
     setOpen(false);
   };
 
+  const showList = open && results.length > 0;
   return (
     <div className="search">
       <input
@@ -56,33 +61,44 @@ function PlaceSearch() {
         type="search"
         placeholder="Search for a place"
         aria-label="Search for a place"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={showList}
+        aria-controls={listId}
+        aria-activedescendant={showList ? `${listId}-${active}` : undefined}
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => setOpen(false)}
         onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') setActive((a) => Math.min(a + 1, results.length - 1));
-          if (e.key === 'ArrowUp') setActive((a) => Math.max(a - 1, 0));
-          if (e.key === 'Enter' && results[active]) choose(results[active]);
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            setOpen(true);
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            setActive((a) => Math.max(0, Math.min(results.length - 1, a + step)));
+          }
+          if (e.key === 'Enter' && results.length > 0) choose(results[Math.min(active, results.length - 1)]);
           if (e.key === 'Escape') setOpen(false);
         }}
       />
-      {open && results.length > 0 ? (
-        <ul className="search-results">
+      {showList ? (
+        <ul className="search-results" id={listId} role="listbox">
           {results.map((place, i) => (
-            <li key={place.id + i}>
-              <button
-                type="button"
-                className={i === active ? 'active' : undefined}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => choose(place)}
-              >
-                {place.name}
-                {place.detail ? <span className="detail">{place.detail}</span> : null}
-              </button>
+            <li
+              key={place.id + i}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              className={i === active ? 'active' : undefined}
+              // Keeps focus in the input, so blur doesn't close the list before the click lands.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => choose(place)}
+            >
+              {place.name}
+              {place.detail ? <span className="detail">{place.detail}</span> : null}
             </li>
           ))}
         </ul>
@@ -125,7 +141,7 @@ export function LocationPanel() {
       <div className="row">
         <Field label="Map width">
           <NumberInput
-            value={Number(km.toFixed(3))}
+            value={km}
             step={0.1}
             min={0.1}
             max={60}

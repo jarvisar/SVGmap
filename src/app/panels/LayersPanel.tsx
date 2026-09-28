@@ -1,5 +1,12 @@
 import { type ReactNode, useState } from 'react';
-import { type FillLayerId, type FillMode, LAYER_NAMES, type LayerId, type LineLayerId } from '../../engine/settings.ts';
+import {
+  type FillLayerId,
+  type FillMode,
+  LAYER_NAMES,
+  type LayerId,
+  type LineLayerId,
+  type OutputMode,
+} from '../../engine/settings.ts';
 import type { FeatureFilters } from '../../engine/tiles/schema.ts';
 import { Check, ColorInput, NumberField, Section, Select } from '../components/controls.tsx';
 import { useApp } from '../store.ts';
@@ -48,7 +55,13 @@ const FILL_MODE_LABELS: Record<FillMode, string> = {
   'hatch-outline': 'Hatch + outline',
 };
 
-function LayerRow(props: { layer: LayerId; fill: boolean; children?: ReactNode }) {
+// A plotter draws "fill" as hatching with an outline.
+const effectiveFillMode = (mode: FillMode, output: OutputMode): FillMode =>
+  output === 'plotter' && mode === 'fill' ? 'hatch-outline' : mode;
+
+const isHatched = (mode: FillMode) => mode === 'hatch' || mode === 'hatch-outline';
+
+function LayerRow(props: { layer: LayerId; fill: boolean; hasOptions: boolean; children?: ReactNode }) {
   const { layer, fill } = props;
   const [open, setOpen] = useState(false);
   const mode = useApp((s) => s.mode);
@@ -62,34 +75,38 @@ function LayerRow(props: { layer: LayerId; fill: boolean; children?: ReactNode }
   // Piers and plazas only cut the water unless they are engraved too.
   const drawn = layer !== 'decks' || decks.engrave;
   const fillModes: FillMode[] = mode === 'plotter' ? ['outline', 'hatch', 'hatch-outline'] : ['fill', 'outline', 'hatch', 'hatch-outline'];
-  const fillMode = fill ? style.fillModes[layer as FillLayerId] : null;
+  const name = LAYER_NAMES[layer];
+  const expandable = enabled && props.hasOptions;
 
   return (
     <>
       <div className="layer">
-        <Check label={LAYER_NAMES[layer]} checked={enabled} onChange={(on) => set({ layers: { ...layers, [layer]: on } })} />
+        <Check label={name} checked={enabled} onChange={(on) => set({ layers: { ...layers, [layer]: on } })} />
         {enabled && drawn ? (
-          <ColorInput
-            label={`${LAYER_NAMES[layer]} colour`}
-            value={style.colors[layer]}
-            onChange={(color) => setStyle({ colors: { ...style.colors, [layer]: color } })}
-          />
+          <ColorInput label={`${name} colour`} value={style.colors[layer]} onChange={(color) => setStyle({ colors: { ...style.colors, [layer]: color } })} />
         ) : null}
-        {enabled && drawn && fill && fillMode ? (
+        {enabled && drawn && fill ? (
           <Select<FillMode>
-            label={`${LAYER_NAMES[layer]} style`}
-            value={fillMode === 'fill' && mode === 'plotter' ? 'hatch-outline' : fillMode}
+            label={`${name} style`}
+            value={effectiveFillMode(style.fillModes[layer as FillLayerId], mode)}
             options={fillModes.map((m) => ({ value: m, label: FILL_MODE_LABELS[m] }))}
             onChange={(m) => setStyle({ fillModes: { ...style.fillModes, [layer]: m } })}
           />
         ) : null}
-        {enabled ? (
-          <button type="button" className="btn btn-small" onClick={() => setOpen(!open)} aria-expanded={open}>
-            {open ? 'Less' : 'More'}
-          </button>
-        ) : null}
+        {expandable ? (
+          <button
+            type="button"
+            className={open ? 'layer-toggle open' : 'layer-toggle'}
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            aria-label={`${name} options`}
+            title="Options"
+          />
+        ) : (
+          <span className="layer-toggle-space" />
+        )}
       </div>
-      {enabled && open ? <div className="layer-options">{props.children}</div> : null}
+      {expandable && open ? <div className="layer-options">{props.children}</div> : null}
     </>
   );
 }
@@ -107,13 +124,8 @@ function FilterChecks(props: { layer: LayerId }) {
 }
 
 function HatchOptions(props: { layer: FillLayerId }) {
-  const output = useApp((s) => s.mode);
   const style = useApp((s) => s.styles[s.mode]);
   const setStyle = useApp((s) => s.setStyle);
-  const mode = style.fillModes[props.layer];
-  // A plotter draws "fill" as hatching too.
-  const hatched = mode === 'hatch' || mode === 'hatch-outline' || (output === 'plotter' && mode === 'fill');
-  if (!hatched) return null;
   const h = style.hatch[props.layer];
   const update = (patch: Partial<typeof h>) => setStyle({ hatch: { ...style.hatch, [props.layer]: { ...h, ...patch } } });
   return (
@@ -128,10 +140,8 @@ function HatchOptions(props: { layer: FillLayerId }) {
 }
 
 function LineWidth(props: { layer: LineLayerId }) {
-  const mode = useApp((s) => s.mode);
   const style = useApp((s) => s.styles[s.mode]);
   const setStyle = useApp((s) => s.setStyle);
-  if (mode !== 'print') return null;
   return (
     <NumberField
       label={props.layer === 'roads' ? 'Line width (minor roads)' : 'Line width'}
@@ -187,24 +197,31 @@ export function LayersPanel() {
   const layers = useApp((s) => s.layers);
   const filters = useApp((s) => s.filters);
   const setFilters = useApp((s) => s.setFilters);
+  const mode = useApp((s) => s.mode);
+  const fillModes = useApp((s) => s.styles[s.mode].fillModes);
+  const engraveDecks = useApp((s) => s.decks.engrave);
   const count = Object.values(layers).filter(Boolean).length;
   return (
     <Section title="Layers" summary={`${count} of ${Object.keys(layers).length}`}>
       <div className="subhead">Areas</div>
-      {FILL_ORDER.map((layer) => (
-        <LayerRow key={layer} layer={layer} fill>
-          {layer === 'water' ? <WaterOptions /> : null}
-          {layer === 'decks' ? <DeckOptions /> : null}
-          <FilterChecks layer={layer} />
-          <HatchOptions layer={layer} />
-        </LayerRow>
-      ))}
+      {FILL_ORDER.map((layer) => {
+        const drawn = layer !== 'decks' || engraveDecks;
+        const hatched = drawn && isHatched(effectiveFillMode(fillModes[layer], mode));
+        return (
+          <LayerRow key={layer} layer={layer} fill hasOptions={hatched || layer === 'water' || layer === 'decks' || Boolean(FILTERS[layer])}>
+            {layer === 'water' ? <WaterOptions /> : null}
+            {layer === 'decks' ? <DeckOptions /> : null}
+            <FilterChecks layer={layer} />
+            {hatched ? <HatchOptions layer={layer} /> : null}
+          </LayerRow>
+        );
+      })}
       <div className="subhead">Lines</div>
       {LINE_ORDER.map((layer) => (
-        <LayerRow key={layer} layer={layer} fill={false}>
+        <LayerRow key={layer} layer={layer} fill={false} hasOptions={layer === 'raceways' || mode === 'print' || Boolean(FILTERS[layer])}>
           {layer === 'raceways' ? <div className="hint">Drawn exactly as mapped. Line cleanup skips them.</div> : null}
           <FilterChecks layer={layer} />
-          <LineWidth layer={layer} />
+          {mode === 'print' ? <LineWidth layer={layer} /> : null}
         </LayerRow>
       ))}
       <Check
@@ -215,4 +232,3 @@ export function LayersPanel() {
     </Section>
   );
 }
-

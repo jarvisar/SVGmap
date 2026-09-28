@@ -58,7 +58,7 @@ a:hover {
 .app {
   display: grid;
   grid-template-rows: 48px 1fr;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 340px 1fr;
   height: 100%;
 }
 
@@ -130,7 +130,8 @@ a:hover {
   min-width: 0;
 }
 
-button.menu-toggle {
+button.menu-toggle,
+.backdrop {
   display: none;
 }
 
@@ -342,13 +343,32 @@ button.menu-toggle {
   border-color: var(--accent-dark);
 }
 
+.btn-primary:disabled:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .btn-small {
   height: 26px;
   padding: 0 8px;
   font-size: 12px;
 }
 
-.segmented {
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.segmented,
+.button-group {
   display: flex;
 }
 
@@ -363,7 +383,8 @@ button.menu-toggle {
   white-space: nowrap;
 }
 
-.segmented button + button {
+.segmented button + button,
+.button-group .btn + .btn {
   margin-left: -1px;
 }
 
@@ -372,6 +393,18 @@ button.menu-toggle {
 }
 
 .segmented button:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.button-group .btn {
+  border-radius: 0;
+}
+
+.button-group .btn:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.button-group .btn:last-child {
   border-radius: 0 var(--radius) var(--radius) 0;
 }
 
@@ -387,7 +420,7 @@ button.menu-toggle {
 .layer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 6px 0;
   border-top: 1px solid var(--line);
 }
@@ -403,7 +436,7 @@ button.menu-toggle {
 }
 
 .layer .select {
-  width: 118px;
+  width: 112px;
   flex: none;
   height: 26px;
   font-size: 12px;
@@ -432,6 +465,43 @@ button.menu-toggle {
 .swatch::-moz-color-swatch {
   border: 0;
   border-radius: 2px;
+}
+
+.layer-toggle,
+.layer-toggle-space {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+.layer-toggle {
+  position: relative;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  cursor: pointer;
+}
+
+.layer-toggle:hover {
+  background: #f4f4f4;
+}
+
+/* Same triangle as the section headers. */
+.layer-toggle::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  border: 4px solid transparent;
+  border-left-color: var(--muted);
+}
+
+.layer-toggle.open::after {
+  left: 6px;
+  top: 8px;
+  border-left-color: transparent;
+  border-top-color: var(--muted);
 }
 
 .layer-options {
@@ -464,18 +534,13 @@ button.menu-toggle {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
-.search-results button {
-  display: block;
-  width: 100%;
+.search-results li {
   padding: 6px 10px;
-  border: 0;
-  background: none;
-  text-align: left;
   cursor: pointer;
 }
 
-.search-results button:hover,
-.search-results button.active {
+.search-results li:hover,
+.search-results li.active {
   background: #f1f5fb;
 }
 
@@ -509,12 +574,35 @@ button.menu-toggle {
   color: var(--faint);
 }
 
+.sidebar-links {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.crash {
+  max-width: 480px;
+  margin: 80px auto;
+  padding: 0 16px;
+}
+
+.crash-buttons {
+  display: flex;
+  gap: 8px;
+}
+
 /* ---------------------------------------------------------------- map */
 
+.map-holder,
+.map-wrap,
 .map,
 .map-overlay {
   position: absolute;
   inset: 0;
+}
+
+.map-holder.hidden {
+  display: none;
 }
 
 .map-overlay {
@@ -523,9 +611,8 @@ button.menu-toggle {
 
 .map-hint {
   position: absolute;
-  left: 50%;
+  left: 12px;
   bottom: 12px;
-  transform: translateX(-50%);
   padding: 4px 10px;
   font-size: 12px;
   color: var(--muted);
@@ -536,25 +623,24 @@ button.menu-toggle {
   white-space: nowrap;
 }
 
-.map-controls {
+.map-notice {
   position: absolute;
   top: 12px;
-  right: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.map-controls .btn {
-  width: 30px;
-  padding: 0;
+  left: 12px;
+  max-width: 360px;
+  margin: 0;
+  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------- preview */
 
+.preview-stage,
 .preview {
   position: absolute;
   inset: 0;
+}
+
+.preview {
   cursor: grab;
   touch-action: none;
 }
@@ -583,6 +669,10 @@ button.menu-toggle {
   padding: 0 10px;
 }
 
+.preview-toolbar .button-group .btn {
+  min-width: 28px;
+}
+
 .preview-empty {
   position: absolute;
   inset: 0;
@@ -607,11 +697,12 @@ button.menu-toggle {
   pointer-events: none;
 }
 
+/* Leaves room for the toolbar on the right. */
 .preview-notices {
   position: absolute;
   top: 12px;
   left: 12px;
-  max-width: 420px;
+  max-width: min(420px, calc(100% - 300px));
 }
 
 .preview-notices .notice {
@@ -628,25 +719,6 @@ button.menu-toggle {
   z-index: 5;
 }
 
-/* ---------------------------------------------------------------- stats */
-
-.stats {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  margin-top: 8px;
-}
-
-.stats td {
-  padding: 3px 0;
-  border-top: 1px solid var(--line);
-}
-
-.stats td:last-child {
-  text-align: right;
-  color: var(--muted);
-}
-
 /* ---------------------------------------------------------------- small screens */
 
 @media (max-width: 800px) {
@@ -656,6 +728,11 @@ button.menu-toggle {
 
   button.menu-toggle {
     display: inline-flex;
+  }
+
+  .menu-toggle.active {
+    background: #eee;
+    border-color: #bbb;
   }
 
   .sidebar {
@@ -672,6 +749,14 @@ button.menu-toggle {
   .app.menu-open .sidebar {
     transform: none;
     box-shadow: 0 0 24px rgba(0, 0, 0, 0.15);
+  }
+
+  .app.menu-open .backdrop {
+    display: block;
+    position: fixed;
+    inset: 48px 0 0 0;
+    z-index: 15;
+    background: rgba(0, 0, 0, 0.2);
   }
 
   .status,
@@ -691,15 +776,26 @@ button.menu-toggle {
   .tab {
     padding: 0 8px;
   }
+
+  /* MapLibre's attribution spans the bottom edge here. */
+  .map-hint {
+    bottom: 44px;
+  }
+
+  .map-notice {
+    right: 52px;
+    max-width: none;
+  }
+
+  .preview-notices {
+    top: 48px;
+    right: 12px;
+    max-width: none;
+  }
 }
 
 @media (max-width: 460px) {
   .share-button {
     display: none;
   }
-}
-
-.preview-stage {
-  position: absolute;
-  inset: 0;
 }

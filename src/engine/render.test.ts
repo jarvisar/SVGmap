@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import type { Paths64 } from 'clipper2-ts';
 import { describe, expect, it } from 'vitest';
-import { compose } from './compose.ts';
+import { type ComposeFonts, compose } from './compose.ts';
 import { defaultRenderSettings } from './defaults.ts';
 import { TILE_EXTENT, worldToLonLat } from './geo/mercator.ts';
 import { computeLayout } from './layout/layout.ts';
@@ -10,6 +10,7 @@ import { planTiles, prepareArea } from './prepare.ts';
 import type { OutputMode, RenderSettings } from './settings.ts';
 import { toSvg } from './svg/writer.ts';
 import { type HersheyFile, parseHershey } from './text/hershey.ts';
+import { parseOutlineFont } from './text/loadFont.ts';
 import { acceptPolygon } from './tiles/schema.ts';
 import { areaMm2, intersectWith, resolveSurfaces, unionAll } from './fills.ts';
 
@@ -17,7 +18,7 @@ const tile = new Uint8Array(readFileSync('src/engine/fixtures/vancouver-14-2589-
 const centre = worldToLonLat(2589.5 * TILE_EXTENT, 5606.5 * TILE_EXTENT, 14);
 const font = { kind: 'stroke' as const, font: parseHershey(JSON.parse(readFileSync('public/fonts/hershey/futural.json', 'utf8')) as HersheyFile) };
 
-function render(mode: OutputMode, patch: Partial<RenderSettings> = {}) {
+function render(mode: OutputMode, patch: Partial<RenderSettings> = {}, fonts: ComposeFonts = { title: font, subtitle: font }) {
   const settings: RenderSettings = {
     ...defaultRenderSettings(mode),
     area: { lon: centre.lon, lat: centre.lat, bearing: 0, widthM: 1200 },
@@ -27,7 +28,7 @@ function render(mode: OutputMode, patch: Partial<RenderSettings> = {}) {
   const layout = computeLayout(settings.product, settings.border);
   const plan = planTiles(settings.area, layout, settings.source);
   const prepared = prepareArea(plan, layout, new Map([['14/2589/5606', tile.buffer.slice(0)]]));
-  const result = compose(settings, layout, prepared, { title: font, subtitle: font }, new Map<string, Paths64>());
+  const result = compose(settings, layout, prepared, fonts, new Map<string, Paths64>());
   return { settings, plan, prepared, result };
 }
 
@@ -78,6 +79,50 @@ describe('rendering a real tile', () => {
     const pens = new Set(result.groups.map((g) => g.color)).size;
     expect(svg.match(/inkscape:label="\d+ - pen /g)?.length).toBe(pens);
     expect(result.stats.plotter!.penUpMm).toBeLessThan(result.stats.plotter!.penUpUnorderedMm);
+  });
+
+  it('gives an outline title and a single-line subtitle their own groups', () => {
+    const bytes = readFileSync('public/fonts/Montserrat-SemiBold.ttf');
+    const montserrat = parseOutlineFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const defaults = defaultRenderSettings('laser');
+    const { result } = render('laser', { label: { ...defaults.label, style: 'band', subtitle: '49.2826° N' } }, { title: montserrat, subtitle: font });
+    const ids = result.groups.map((g) => g.id);
+    expect(ids).toEqual(expect.arrayContaining(['text', 'text-lines']));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('finishes with a pen width of zero', () => {
+    const { result } = render('plotter', { plotter: { penWidth: 0, optimize: true } });
+    expect(result.groups.find((g) => g.id === 'band')!.strokeWidth).toBe(0.05);
+  });
+
+  it('refuses a map width of zero', () => {
+    const settings = defaultRenderSettings('laser');
+    const layout = computeLayout(settings.product, settings.border);
+    expect(() => planTiles({ ...settings.area, widthM: 0 }, layout, settings.source)).toThrow(/more than zero/);
+  });
+
+  it('keeps both sides of a map that crosses the antimeridian', () => {
+    const settings = defaultRenderSettings('laser');
+    const layout = computeLayout(settings.product, settings.border);
+    const plan = planTiles({ lon: 179.995, lat: 49.28, bearing: 0, widthM: 3000 }, layout, settings.source);
+    expect(plan.tiles.some((t) => t.x === 0)).toBe(true);
+    // Any real tile will do. Only where its lines end up matters.
+    const data = new Map(plan.tiles.map((t) => [`${t.z}/${t.x}/${t.y}`, tile.buffer.slice(0)] as const));
+    const prepared = prepareArea(plan, layout, data);
+    const centreX = layout.window.x + layout.window.w / 2;
+    const xs = prepared.lines.flatMap((l) => l.path.map(([x]) => x));
+    expect(xs.some((x) => x > centreX + 20)).toBe(true);
+    expect(xs.some((x) => x < centreX - 20)).toBe(true);
+  });
+
+  it('never plans more tiles than the hard limit', () => {
+    const settings = defaultRenderSettings('laser');
+    const layout = computeLayout(settings.product, settings.border);
+    const plan = planTiles({ lon: 0, lat: 45, bearing: 0, widthM: 400_000 }, layout, { ...settings.source, maxTiles: 1e9 });
+    expect(plan.tiles.length).toBeLessThanOrEqual(2000);
+    expect(plan.zoom).toBeLessThan(14);
+    expect(plan.warnings).toHaveLength(1);
   });
 
   it('keeps everything inside a round piece', () => {

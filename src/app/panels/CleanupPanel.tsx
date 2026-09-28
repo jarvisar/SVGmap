@@ -1,6 +1,7 @@
 import type { CleanupSettings } from '../../engine/lines/cleanup.ts';
 import { Check, Disclosure, NumberField, Section, Segmented, Slider } from '../components/controls.tsx';
-import { type CleanupPreset, useApp } from '../store.ts';
+import type { CleanupPreset } from '../settings.ts';
+import { useApp } from '../store.ts';
 
 const PRESET_NAMES: Record<CleanupPreset, string> = {
   off: 'Off',
@@ -10,33 +11,29 @@ const PRESET_NAMES: Record<CleanupPreset, string> = {
   custom: 'Custom',
 };
 
+type NumberKey = { [K in keyof CleanupSettings]: CleanupSettings[K] extends number ? K : never }[keyof CleanupSettings];
+type BooleanKey = { [K in keyof CleanupSettings]: CleanupSettings[K] extends boolean ? K : never }[keyof CleanupSettings];
+
 export function CleanupPanel() {
   const preset = useApp((s) => s.cleanupPreset);
   const c = useApp((s) => s.cleanup);
   const setPreset = useApp((s) => s.setCleanupPreset);
-  const setCleanup = useApp((s) => s.setCleanup);
-  const set = (patch: Partial<CleanupSettings>) => setCleanup(patch);
+  const set = useApp((s) => s.setCleanup);
 
-  const num = (key: keyof CleanupSettings, label: string, step: number, unit?: string, max?: number) => (
-    <NumberField
-      label={label}
-      value={c[key] as number}
-      min={0}
-      max={max}
-      step={step}
-      unit={unit}
-      onChange={(v) => set({ [key]: v } as Partial<CleanupSettings>)}
-    />
+  const num = (key: NumberKey, label: string, step: number, unit?: string, max?: number) => (
+    <NumberField label={label} value={c[key]} min={0} max={max} step={step} unit={unit} onChange={(v) => set({ [key]: v })} />
   );
-  const check = (key: keyof CleanupSettings, label: string) => (
-    <Check label={label} checked={c[key] as boolean} onChange={(v) => set({ [key]: v } as Partial<CleanupSettings>)} />
+  // Fractions and multipliers, shown as a percentage.
+  const pct = (key: NumberKey, label: string, max = 100) => (
+    <NumberField label={label} value={c[key]} min={0} max={max} step={1} scale={100} unit="%" onChange={(v) => set({ [key]: v })} />
   );
+  const check = (key: BooleanKey, label: string) => <Check label={label} checked={c[key]} onChange={(v) => set({ [key]: v })} />;
 
   return (
     <Section title="Line cleanup" summary={PRESET_NAMES[preset]}>
       <Segmented<CleanupPreset>
         label="Cleanup"
-        value={preset === 'custom' ? 'standard' : preset}
+        value={preset}
         options={[
           { value: 'off', label: 'Off' },
           { value: 'light', label: 'Light' },
@@ -72,7 +69,7 @@ export function CleanupPanel() {
             {check('wholePaths', 'Keep or drop whole streets')}
             <div className="row">
               {num('parallelAngle', 'Parallel within', 1, '°', 90)}
-              {num('shadowFraction', 'Share covered', 0.01, undefined, 1)}
+              {pct('shadowFraction', 'Share covered')}
             </div>
 
             <div className="subhead">Gaps and dead ends</div>
@@ -105,15 +102,15 @@ export function CleanupPanel() {
               {num('denseProtectRank', 'Protect roads up to rank', 1, undefined, 12)}
             </div>
             <div className="row">
-              {num('denseHotFraction', 'Share in patch', 0.01, undefined, 1)}
-              {num('denseShadowFraction', 'Share doubled', 0.01, undefined, 1)}
+              {pct('denseHotFraction', 'Share in patch')}
+              {pct('denseShadowFraction', 'Share doubled')}
             </div>
             <div className="row">
               {num('denseMeshMax', 'Mesh links under', 0.1, 'mm', 20)}
-              {num('denseMeshDetour', 'Max detour', 0.1, '×', 20)}
+              {pct('denseMeshDetour', 'Max detour', 2000)}
             </div>
             {check('denseCountsFill', 'Count filled areas as dark')}
-            {num('denseCoveredScale', 'Limit over filled areas', 0.05, '×', 1)}
+            {pct('denseCoveredScale', 'Limit over filled areas')}
             <div className="hint">Rank 6 is residential streets. Anything more important is never removed from a dense patch.</div>
           </Disclosure>
         </>

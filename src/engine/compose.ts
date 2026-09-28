@@ -65,7 +65,7 @@ interface Draft {
   plotLines?: Path[];
 }
 
-const LABEL_ATTRIBUTION = '© OpenStreetMap contributors';
+const ATTRIBUTION = '© OpenStreetMap contributors';
 
 function filterSignature(s: RenderSettings, layer: FillLayerId): string {
   const f = s.filters;
@@ -101,7 +101,9 @@ export function compose(
   const window = layout.window;
   const windowPoly = shapePolygon(window);
   const plotter = s.mode === 'plotter';
-  const hairline = plotter ? s.plotter.penWidth : s.mode === 'laser' ? 0.05 : 0.1;
+  // Same floor as the UI. A zero pen width would never finish the band passes below.
+  const pen = Math.max(s.plotter.penWidth, 0.05);
+  const hairline = plotter ? pen : s.mode === 'laser' ? 0.05 : 0.1;
 
   // Title
   const built = buildLabel(layout, s.label, fonts.title, fonts.subtitle);
@@ -253,7 +255,7 @@ export function compose(
       // Don't draw a stream over its own river fill.
       items = items.flatMap((i) => linesOutside([i.path], fills.water).map((path) => ({ ...i, path })));
     }
-    const width = plotter ? s.plotter.penWidth : s.mode === 'laser' ? hairline : style.lineWidths[layer];
+    const width = plotter ? pen : s.mode === 'laser' ? hairline : style.lineWidths[layer];
     if (s.mode === 'print' && style.classWidths && layer === 'roads') {
       const classes = new Map<string, Path[]>();
       for (const i of items) {
@@ -296,12 +298,14 @@ export function compose(
       fillDraft('text', 'text', 'Title', letters, style.fillModes.text, 'text');
     }
     if (label.text.strokes.length > 0) {
+      // A band can mix an outline title with a single-line subtitle, and group ids have to stay unique.
+      const mixed = rings.length > 0;
       drafts.push({
-        id: 'text',
+        id: mixed ? 'text-lines' : 'text',
         element: 'text',
-        label: 'Title',
+        label: mixed ? 'Title (single-line)' : 'Title',
         kind: 'stroke',
-        strokeWidth: plotter ? s.plotter.penWidth : s.mode === 'laser' ? hairline : 0.3,
+        strokeWidth: plotter ? pen : s.mode === 'laser' ? hairline : 0.3,
         lines: [{ paths: label.text.strokes }],
       });
     }
@@ -311,7 +315,7 @@ export function compose(
         element: 'frame',
         label: s.label.style === 'band' ? 'Title divider' : 'Title box',
         kind: 'stroke',
-        strokeWidth: plotter ? s.plotter.penWidth : Math.max(label.frameWidth, 0.05),
+        strokeWidth: plotter ? pen : Math.max(label.frameWidth, 0.05),
         lines: [{ paths: label.frame }],
       });
     }
@@ -322,7 +326,6 @@ export function compose(
     const thickness = inner.x - outer.x;
     if (plotter) {
       // Plotters draw the band as concentric passes of the pen.
-      const pen = s.plotter.penWidth;
       const passes = Math.max(1, Math.round(thickness / pen));
       const loops: Path[] = [];
       for (let i = 0; i < passes; i++) {
@@ -341,7 +344,7 @@ export function compose(
       element: 'border',
       label: 'Border line',
       kind: 'stroke',
-      strokeWidth: plotter ? s.plotter.penWidth : layout.thinWidth,
+      strokeWidth: plotter ? pen : layout.thinWidth,
       d: shapePathD(layout.thinLine),
       plotLines: [[...ring, ring[0]]],
     });
@@ -462,7 +465,7 @@ export function compose(
       widthM: prepared.widthM,
       heightM: prepared.heightM,
       scale: Math.round(prepared.transform.metresPerMm * 1000),
-      attribution: LABEL_ATTRIBUTION,
+      attribution: ATTRIBUTION,
       generated: new Date().toISOString(),
     },
   };

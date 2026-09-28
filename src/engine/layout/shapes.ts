@@ -100,11 +100,8 @@ export function shapePolygon(shape: Shape, tolerance = 0.005): Path {
 }
 
 // Clockwise on screen. reverse draws it the other way, for the inside of a band.
-export function shapePathD(shape: Shape, offset: Point = [0, 0], reverse = false): string {
-  const [ox, oy] = offset;
-  const x = shape.x + ox;
-  const y = shape.y + oy;
-  const { w, h } = shape;
+export function shapePathD(shape: Shape, reverse = false): string {
+  const { x, y, w, h } = shape;
   const sweep = reverse ? 0 : 1;
   if (shape.kind === 'circle') {
     const r = shape.r;
@@ -132,8 +129,8 @@ export function shapePathD(shape: Shape, offset: Point = [0, 0], reverse = false
 }
 
 // One path that fills the same under either fill rule.
-export function bandPathD(outer: Shape, inner: Shape, offset: Point = [0, 0]): string {
-  return shapePathD(outer, offset) + shapePathD(inner, offset, true);
+export function bandPathD(outer: Shape, inner: Shape): string {
+  return shapePathD(outer) + shapePathD(inner, true);
 }
 
 // For points inside the shape.

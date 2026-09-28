@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { toSvg } from '../engine/svg/writer.ts';
 import { CUSTOM_FONT_ID } from '../engine/text/fonts.ts';
+import { DEFAULT_LABEL } from '../engine/text/label.ts';
 import { getCustomFont, loadStoredFont } from './customFont.ts';
 import { MapView } from './map/MapView.tsx';
 import { CleanupPanel } from './panels/CleanupPanel.tsx';
@@ -13,14 +14,15 @@ import { SizePanel } from './panels/SizePanel.tsx';
 import { TitlePanel } from './panels/TitlePanel.tsx';
 import { Preview } from './preview/Preview.tsx';
 import { requestRender, settingsKey, useRender } from './render.ts';
+import { toRenderSettings } from './settings.ts';
 import { settingsFromUrl, shareUrl } from './share.ts';
-import { selectSettings, toRenderSettings, useApp } from './store.ts';
+import { selectSettings, useApp } from './store.ts';
 
 function slug(text: string) {
   return (
     text
       .normalize('NFKD')
-      .replace(/[̀-ͯ]/g, '')
+      .replace(/\p{M}/gu, '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'map'
@@ -46,12 +48,44 @@ function useStartup() {
     void loadStoredFont().then((font) => {
       const app = useApp.getState();
       app.setCustomFontName(font?.name ?? null);
-      if (!font && (app.label.font === CUSTOM_FONT_ID || app.label.subtitleFont === CUSTOM_FONT_ID)) {
-        app.setLabel({ font: 'montserrat', subtitleFont: '' });
-      }
+      if (font) return;
+      // No stored font (cleared storage or someone else's share link), so fall back.
+      if (app.label.font === CUSTOM_FONT_ID) app.setLabel({ font: DEFAULT_LABEL.font });
+      if (app.label.subtitleFont === CUSTOM_FONT_ID) app.setLabel({ subtitleFont: '' });
     });
   }, []);
 }
+
+function resetSettings() {
+  if (confirm('Reset all settings to the defaults? The location and title are kept.')) useApp.getState().reset();
+}
+
+// Memoised because the map updates the area on every frame while it's dragged.
+// Each panel subscribes to what it shows.
+const Sidebar = memo(function Sidebar() {
+  return (
+    <aside className="sidebar">
+      <LocationPanel />
+      <SizePanel />
+      <OutputPanel />
+      <LayersPanel />
+      <TitlePanel />
+      <CleanupPanel />
+      <DataPanel />
+      <div className="sidebar-footer">
+        Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, tiles by{' '}
+        <a href="https://openfreemap.org">OpenFreeMap</a> and <a href="https://openmaptiles.org">OpenMapTiles</a>, search by{' '}
+        <a href="https://photon.komoot.io">Photon</a>. Credit OpenStreetMap on anything you publish or sell.
+        <div className="sidebar-links">
+          <a href="https://github.com/jarvisar/SVGmap">Source on GitHub</a>
+          <button type="button" className="link-button" onClick={resetSettings}>
+            Reset settings
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+});
 
 export function App() {
   useStartup();
@@ -83,8 +117,7 @@ export function App() {
   };
 
   const save = () => {
-    if (!result) return;
-    download(`${slug(settings.label.text || 'map')}-${result.mode}.svg`, toSvg(result));
+    if (result) download(`${slug(result.meta.title)}-${result.mode}.svg`, toSvg(result));
   };
 
   const share = async () => {
@@ -113,7 +146,12 @@ export function App() {
   return (
     <div className={menuOpen ? 'app menu-open' : 'app'}>
       <header className="topbar">
-        <button type="button" className="btn btn-small menu-toggle" onClick={() => setMenuOpen(!menuOpen)}>
+        <button
+          type="button"
+          className={menuOpen ? 'btn btn-small menu-toggle active' : 'btn btn-small menu-toggle'}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
           Settings
         </button>
         <div className="brand">SVGmap</div>
@@ -142,25 +180,11 @@ export function App() {
           </button>
         )}
       </header>
-      <aside className="sidebar">
-        <LocationPanel />
-        <SizePanel />
-        <OutputPanel />
-        <LayersPanel />
-        <TitlePanel />
-        <CleanupPanel />
-        <DataPanel />
-        <div className="sidebar-footer">
-          Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, tiles by{' '}
-          <a href="https://openfreemap.org">OpenFreeMap</a> and <a href="https://openmaptiles.org">OpenMapTiles</a>, search by{' '}
-          <a href="https://photon.komoot.io">Photon</a>. Credit OpenStreetMap on anything you publish or sell.
-          <br />
-          <a href="https://github.com/jarvisar/SVGmap">Source on GitHub</a>
-        </div>
-      </aside>
+      <Sidebar />
+      {menuOpen ? <div className="backdrop" onClick={() => setMenuOpen(false)} /> : null}
       <main className="main">
         {status === 'working' ? <div className="progress" style={{ width: `${barWidth}%` }} /> : null}
-        <div style={{ position: 'absolute', inset: 0, display: view === 'map' ? 'block' : 'none' }}>
+        <div className={view === 'map' ? 'map-holder' : 'map-holder hidden'}>
           <MapView />
         </div>
         {view === 'preview' ? <Preview onGenerate={generate} /> : null}

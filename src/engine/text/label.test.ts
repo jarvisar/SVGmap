@@ -4,7 +4,8 @@ import { DEFAULT_BORDER, computeLayout } from '../layout/layout.ts';
 import { PRODUCT_PRESETS } from '../presets.ts';
 import { type HersheyFile, parseHershey } from './hershey.ts';
 import { DEFAULT_LABEL, LabelError, buildLabel, layoutBoxLabel } from './label.ts';
-import { geometryBounds, parseOutlineFont, textGeometry } from './outline.ts';
+import { parseOutlineFont } from './loadFont.ts';
+import { geometryBounds, textGeometry } from './outline.ts';
 
 const hershey = { kind: 'stroke' as const, font: parseHershey(JSON.parse(readFileSync('public/fonts/hershey/futural.json', 'utf8')) as HersheyFile) };
 const bytes = readFileSync('public/fonts/Montserrat-SemiBold.ttf');

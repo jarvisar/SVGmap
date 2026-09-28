@@ -1,15 +1,18 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { OutputGroup, RenderResult } from '../../engine/result.ts';
 import type { ElementId } from '../../engine/settings.ts';
+import { Segmented } from '../components/controls.tsx';
 import { useRender } from '../render.ts';
+import { type PreviewLook, useApp } from '../store.ts';
 
-type Look = 'material' | 'colors';
-
+// The part of the piece in view, in mm. The height follows the stage.
 interface Box {
   x: number;
   y: number;
   w: number;
 }
+
+type Point = [number, number];
 
 const WOOD = '#E8D2AC';
 const BURN = '#3A2415';
@@ -26,7 +29,7 @@ const BURN_OPACITY: Partial<Record<ElementId, number>> = {
   decks: 0.3,
 };
 
-function groupPaint(group: OutputGroup, result: RenderResult, look: Look) {
+function groupPaint(group: OutputGroup, result: RenderResult, look: PreviewLook) {
   const laserMaterial = result.mode === 'laser' && look === 'material';
   if (group.id === 'cut') {
     return { fill: 'none', stroke: laserMaterial ? 'rgba(0,0,0,0.35)' : group.color, strokeWidth: laserMaterial ? 0.3 : Math.max(group.strokeWidth, 0.12) };
@@ -42,7 +45,7 @@ function groupPaint(group: OutputGroup, result: RenderResult, look: Look) {
     : { fill: 'none', stroke: group.color, strokeWidth: width };
 }
 
-const PreviewContent = memo(function PreviewContent(props: { result: RenderResult; look: Look }) {
+const PreviewContent = memo(function PreviewContent(props: { result: RenderResult; look: PreviewLook }) {
   const { result, look } = props;
   const background =
     result.mode === 'laser' ? (look === 'material' ? WOOD : '#fff') : (result.background ?? '#fff');
@@ -63,16 +66,35 @@ const PreviewContent = memo(function PreviewContent(props: { result: RenderResul
   );
 });
 
+// Centre of the touching pointers and their average distance from it.
+function spread(points: Map<number, Point>): [Point, number] {
+  let x = 0;
+  let y = 0;
+  for (const [px, py] of points.values()) {
+    x += px / points.size;
+    y += py / points.size;
+  }
+  let distance = 0;
+  for (const [px, py] of points.values()) distance += Math.hypot(px - x, py - y) / points.size;
+  return [[x, y], distance];
+}
+
+const clampWidth = (w: number) => Math.min(Math.max(w, 2), 5000);
+
 export function Preview(props: { onGenerate: () => void }) {
   const result = useRender((s) => s.result);
   const status = useRender((s) => s.status);
   const error = useRender((s) => s.error);
-  const [look, setLook] = useState<Look>('material');
+  const look = useApp((s) => s.previewLook);
+  const setLook = useApp((s) => s.setPreviewLook);
   const [box, setBox] = useState<Box | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ x: number; y: number; box: Box } | null>(null);
+  // Pointers down on the stage, in stage pixels. Dragging and pinching both
+  // work from where the gesture started, so they don't drift.
+  const pointers = useRef(new Map<number, Point>());
+  const gesture = useRef<{ box: Box; start: Map<number, Point> } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -96,33 +118,49 @@ export function Preview(props: { onGenerate: () => void }) {
   const shapeKey = result ? `${result.width}x${result.height}` : '';
   useEffect(() => fitRef.current(), [shapeKey, size.w, size.h]);
 
-  const onWheel = (e: React.WheelEvent) => {
+  // Zooms by factor, keeping the point at (px, py) on the stage still.
+  const zoomAt = (px: number, py: number, factor: number) => {
     if (!box || size.w === 0) return;
-    const rect = ref.current!.getBoundingClientRect();
-    const factor = Math.exp(e.deltaY * 0.0015);
-    const px = (e.clientX - rect.left) / size.w;
-    const py = (e.clientY - rect.top) / size.h;
-    const h = (box.w * size.h) / size.w;
-    const w = Math.min(Math.max(box.w * factor, 2), 5000);
-    const nh = (w * size.h) / size.w;
-    setBox({ x: box.x + px * (box.w - w), y: box.y + py * (h - nh), w });
+    const w = clampWidth(box.w * factor);
+    const before = box.w / size.w;
+    const after = w / size.w;
+    setBox({ x: box.x + px * (before - after), y: box.y + py * (before - after), w });
   };
 
+  const stagePoint = (e: React.PointerEvent | React.WheelEvent): Point => {
+    const rect = ref.current!.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  };
+  const restart = () => {
+    gesture.current = box && pointers.current.size > 0 ? { box, start: new Map(pointers.current) } : null;
+    setDragging(pointers.current.size > 0);
+  };
   const onPointerDown = (e: React.PointerEvent) => {
     if (!box) return;
-    (e.target as Element).setPointerCapture(e.pointerId);
-    drag.current = { x: e.clientX, y: e.clientY, box };
-    setDragging(true);
+    try {
+      // Keeps the drag going outside the stage. Throws if the pointer is already gone.
+      (e.target as Element).setPointerCapture(e.pointerId);
+    } catch {
+      return;
+    }
+    pointers.current.set(e.pointerId, stagePoint(e));
+    restart();
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d || size.w === 0) return;
-    const k = d.box.w / size.w;
-    setBox({ x: d.box.x - (e.clientX - d.x) * k, y: d.box.y - (e.clientY - d.y) * k, w: d.box.w });
+    const g = gesture.current;
+    if (!g || !pointers.current.has(e.pointerId) || size.w === 0) return;
+    pointers.current.set(e.pointerId, stagePoint(e));
+    const [c0, d0] = spread(g.start);
+    const [c1, d1] = spread(pointers.current);
+    const w = clampWidth(d0 > 0 && d1 > 0 ? (g.box.w * d0) / d1 : g.box.w);
+    // Keep the spot under the fingers' centre under it.
+    const k0 = g.box.w / size.w;
+    const k1 = w / size.w;
+    setBox({ x: g.box.x + c0[0] * k0 - c1[0] * k1, y: g.box.y + c0[1] * k0 - c1[1] * k1, w });
   };
-  const onPointerUp = () => {
-    drag.current = null;
-    setDragging(false);
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    restart();
   };
 
   if (!result) {
@@ -147,10 +185,11 @@ export function Preview(props: { onGenerate: () => void }) {
     <div className="preview-stage" ref={ref}>
       <div
         className={dragging ? 'preview dragging' : 'preview'}
-        onWheel={onWheel}
+        onWheel={(e) => zoomAt(...stagePoint(e), Math.exp(e.deltaY * 0.0015))}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         onDoubleClick={fit}
       >
         {box ? (
@@ -161,18 +200,27 @@ export function Preview(props: { onGenerate: () => void }) {
       </div>
       <div className="preview-toolbar">
         {result.mode === 'laser' ? (
-          <div className="segmented">
-            <button type="button" className={look === 'material' ? 'active' : undefined} onClick={() => setLook('material')}>
-              Wood
-            </button>
-            <button type="button" className={look === 'colors' ? 'active' : undefined} onClick={() => setLook('colors')}>
-              Colours
-            </button>
-          </div>
+          <Segmented<PreviewLook>
+            label="Preview colours"
+            value={look}
+            options={[
+              { value: 'material', label: 'Wood' },
+              { value: 'colors', label: 'Colours' },
+            ]}
+            onChange={setLook}
+          />
         ) : null}
-        <button type="button" className="btn btn-small" onClick={fit}>
-          Fit
-        </button>
+        <div className="button-group">
+          <button type="button" className="btn btn-small" aria-label="Zoom in" title="Zoom in" onClick={() => zoomAt(size.w / 2, size.h / 2, 1 / 1.5)}>
+            +
+          </button>
+          <button type="button" className="btn btn-small" aria-label="Zoom out" title="Zoom out" onClick={() => zoomAt(size.w / 2, size.h / 2, 1.5)}>
+            −
+          </button>
+          <button type="button" className="btn btn-small" onClick={fit}>
+            Fit
+          </button>
+        </div>
       </div>
       {result.warnings.length || error ? (
         <div className="preview-notices">

@@ -17,9 +17,10 @@ function describe(result: RenderResult): string {
 }
 
 function groupAttributes(group: OutputGroup): string {
-  if (group.kind === 'fill') return `fill="${group.color}" stroke="none"`;
+  const color = escapeXml(group.color);
+  if (group.kind === 'fill') return `fill="${color}" stroke="none"`;
   return (
-    `fill="none" stroke="${group.color}" stroke-width="${fmt(group.strokeWidth)}" ` +
+    `fill="none" stroke="${color}" stroke-width="${fmt(group.strokeWidth)}" ` +
     'stroke-linecap="round" stroke-linejoin="round"'
   );
 }
@@ -43,7 +44,7 @@ export function toSvg(result: RenderResult): string {
     `  <desc>${escapeXml(describe(result))}</desc>`,
   ];
   if (result.background) {
-    out.push(`  <rect id="background" width="${w}" height="${h}" fill="${result.background}"/>`);
+    out.push(`  <rect id="background" width="${w}" height="${h}" fill="${escapeXml(result.background)}"/>`);
   }
 
   if (result.mode === 'plotter') {
@@ -61,7 +62,7 @@ export function toSvg(result: RenderResult): string {
       const name = `${index + 1} - pen ${pen.color}`;
       out.push(
         `  <g id="pen${index + 1}" inkscape:groupmode="layer" inkscape:label="${escapeXml(name)}" ` +
-          `fill="none" stroke="${pen.color}" stroke-width="${fmt(width)}" stroke-linecap="round" stroke-linejoin="round">`,
+          `fill="none" stroke="${escapeXml(pen.color)}" stroke-width="${fmt(width)}" stroke-linecap="round" stroke-linejoin="round">`,
       );
       for (const group of pen.groups) {
         out.push(`    <g id="${group.id}" inkscape:label="${escapeXml(group.label)}">`);

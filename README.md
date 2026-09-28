@@ -10,9 +10,11 @@ Visit the [GitHub Pages site](https://ajarvis.co/SVGmap/) to access the latest d
 
 ## How to Use
 
-Search for a place or pick one of the example cities. Drag the map to move the frame, scroll to zoom and right-drag to rotate. The frame shows the whole piece, including the margins, border and title.
+Search for a place or pick one of the example cities. Drag the map to move the frame, scroll to zoom and right-drag to rotate. On a phone, pinch to zoom and twist to rotate. The frame shows the whole piece, including the margins, border and title.
 
-Click `Generate` to build the SVG. The preview updates as you change settings. Click `Download SVG` to save the file, or `Share` to copy a link with your settings.
+Click `Generate` to build the SVG. The preview updates as you change settings. Scroll or pinch to zoom the preview and drag to move it. Double-click it or click `Fit` to see the whole piece again. Click `Download SVG` to save the file, or `Share` to copy a link with your settings.
+
+Settings are saved in the browser. `Reset settings` at the bottom of the sidebar puts everything back to the defaults except the location and title.
 
 The settings are:
 
@@ -68,7 +70,7 @@ Run the tests with `npm test`. The live render test is skipped unless `SVGMAP_NE
 
 ## Known Issues & Limitations
 
-* Areas that need more than 400 map tiles use less detailed tiles, so small features can be missing. A city center at the default scale needs 4 to 12.
+* Areas that need more than 400 map tiles use less detailed tiles, so small features can be missing. A city center at the default scale needs 4 to 12. The limit can be raised to 2000 under Map data.
 * Map tiles store coordinates to about half a metre. At large scales (under about 1:5000) curves can look slightly angular.
 * The tiles don't mark sidewalks, so they can't be removed by tag. The cleanup removes most of them because they run next to a road.
 * Only SVG export is supported. There is no DXF.

@@ -1,9 +1,9 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { FillMode } from '../../engine/settings.ts';
-import { CUSTOM_FONT_ID, FONTS } from '../../engine/text/fonts.ts';
+import { CUSTOM_FONT_ID, FONTS, fontInfo } from '../../engine/text/fonts.ts';
 import type { LabelPosition, LabelSettings } from '../../engine/text/label.ts';
 import { Check, Disclosure, Field, NumberField, Section, Segmented, SelectField, Slider, TextField } from '../components/controls.tsx';
-import { storeFont } from '../customFont.ts';
+import { checkFont, storeFont } from '../customFont.ts';
 import { useApp } from '../store.ts';
 
 const POSITIONS: { value: LabelPosition; label: string }[] = [
@@ -14,6 +14,13 @@ const POSITIONS: { value: LabelPosition; label: string }[] = [
   { value: 'upper_left', label: 'Top left' },
   { value: 'upper_center', label: 'Top centre' },
 ];
+
+const LETTERING: Record<FillMode, string> = {
+  fill: 'Filled',
+  outline: 'Outline',
+  hatch: 'Hatched',
+  'hatch-outline': 'Hatched with outline',
+};
 
 const LOAD_FONT = '__load';
 
@@ -34,7 +41,6 @@ function coordinates(lat: number, lon: number) {
 
 export function TitlePanel() {
   const label = useApp((s) => s.label);
-  const area = useApp((s) => s.area);
   const style = useApp((s) => s.styles[s.mode]);
   const mode = useApp((s) => s.mode);
   const customFontName = useApp((s) => s.customFontName);
@@ -43,6 +49,7 @@ export function TitlePanel() {
   const setCustomFontName = useApp((s) => s.setCustomFontName);
   const fileInput = useRef<HTMLInputElement>(null);
   const pendingField = useRef<'font' | 'subtitleFont'>('font');
+  const [fontError, setFontError] = useState('');
 
   const set = (patch: Partial<LabelSettings>) => setLabel(patch);
   const chooseFont = (field: 'font' | 'subtitleFont', id: string) => {
@@ -51,22 +58,32 @@ export function TitlePanel() {
       fileInput.current?.click();
       return;
     }
+    setFontError('');
     set({ [field]: id });
   };
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     const data = await file.arrayBuffer();
-    await storeFont({ name: file.name.replace(/\.(ttf|otf|woff)$/i, ''), data });
-    setCustomFontName(file.name.replace(/\.(ttf|otf|woff)$/i, ''));
+    const problem = await checkFont(data);
+    setFontError(problem ?? '');
+    if (problem) return;
+    const name = file.name.replace(/\.(ttf|otf|woff)$/i, '');
+    await storeFont({ name, data });
+    setCustomFontName(name);
     set({ [pendingField.current]: CUSTOM_FONT_ID });
+  };
+  const subtitleFromCoordinates = () => {
+    const { lat, lon } = useApp.getState().area;
+    set({ subtitle: coordinates(lat, lon) });
   };
 
   const band = label.style === 'band';
   const fillModes: FillMode[] = mode === 'plotter' ? ['outline', 'hatch', 'hatch-outline'] : ['fill', 'outline', 'hatch', 'hatch-outline'];
   const letteringMode = mode === 'plotter' && style.fillModes.text === 'fill' ? 'hatch-outline' : style.fillModes.text;
+  const singleLine = fontInfo(label.font)?.kind === 'stroke';
 
   return (
-    <Section title="Title" summary={label.enabled ? label.text : 'Off'}>
+    <Section title="Title" summary={label.enabled && label.text.trim() ? label.text : 'Off'}>
       <Check label="Show a title" checked={label.enabled} onChange={(enabled) => set({ enabled })} />
       {label.enabled ? (
         <>
@@ -85,7 +102,7 @@ export function TitlePanel() {
           {band ? (
             <>
               <TextField label="Subtitle" value={label.subtitle} placeholder="Optional" onChange={(subtitle) => set({ subtitle })} />
-              <button type="button" className="btn btn-small" style={{ marginTop: 6 }} onClick={() => set({ subtitle: coordinates(area.lat, area.lon) })}>
+              <button type="button" className="btn btn-small" style={{ marginTop: 6 }} onClick={subtitleFromCoordinates}>
                 Use the coordinates
               </button>
               <Field label="Position">
@@ -104,6 +121,7 @@ export function TitlePanel() {
             <SelectField<LabelPosition> label="Position" value={label.position} options={POSITIONS} onChange={(position) => set({ position })} />
           )}
           <SelectField label="Font" value={label.font} options={fontOptions(customFontName)} onChange={(id) => chooseFont('font', id)} />
+          {fontError ? <div className="notice error">{fontError}</div> : null}
           <input
             ref={fileInput}
             type="file"
@@ -118,9 +136,9 @@ export function TitlePanel() {
           <SelectField<FillMode>
             label="Lettering"
             value={letteringMode}
-            options={fillModes.map((m) => ({ value: m, label: { fill: 'Filled', outline: 'Outline', hatch: 'Hatched', 'hatch-outline': 'Hatched with outline' }[m] }))}
+            options={fillModes.map((m) => ({ value: m, label: LETTERING[m] }))}
             onChange={(m) => setStyle({ fillModes: { ...style.fillModes, text: m } })}
-            hint="Single-line fonts are always drawn as strokes."
+            hint={singleLine ? 'Single-line fonts are always drawn as strokes.' : undefined}
           />
 
           {band ? (
@@ -138,7 +156,7 @@ export function TitlePanel() {
                   onChange={(bandAlign) => set({ bandAlign })}
                 />
               </Field>
-              <Slider label="Letter spacing" value={label.titleSpacing} min={0.8} max={2} step={0.05} unit="×" onChange={(titleSpacing) => set({ titleSpacing })} />
+              <Slider label="Letter spacing" value={label.titleSpacing} min={80} max={200} step={5} scale={100} unit="%" onChange={(titleSpacing) => set({ titleSpacing })} />
               <Check label="Divider line" checked={label.divider} onChange={(divider) => set({ divider })} />
             </>
           ) : (
@@ -176,7 +194,7 @@ export function TitlePanel() {
                   <NumberField label="Padding (top, bottom)" value={label.bandPaddingY} min={0} max={50} step={0.1} unit="mm" onChange={(bandPaddingY) => set({ bandPaddingY })} />
                 </div>
                 <div className="row">
-                  <NumberField label="Subtitle spacing" value={label.subtitleSpacing} min={0.8} max={3} step={0.05} unit="×" onChange={(subtitleSpacing) => set({ subtitleSpacing })} />
+                  <NumberField label="Subtitle spacing" value={label.subtitleSpacing} min={80} max={300} step={5} scale={100} unit="%" onChange={(subtitleSpacing) => set({ subtitleSpacing })} />
                   <NumberField label="Divider width" value={label.dividerWidth} min={0.01} max={3} step={0.05} unit="mm" onChange={(dividerWidth) => set({ dividerWidth })} />
                 </div>
                 <SelectField
@@ -200,7 +218,7 @@ export function TitlePanel() {
                   <NumberField label="Outline width" value={label.borderWidth} min={0.01} max={5} step={0.05} unit="mm" onChange={(borderWidth) => set({ borderWidth })} />
                   <NumberField label="Gap from border" value={label.gap} min={0} max={50} step={0.1} unit="mm" onChange={(gap) => set({ gap })} />
                 </div>
-                <NumberField label="Text scale in box" value={label.textScale} min={0.1} max={1} step={0.01} onChange={(textScale) => set({ textScale })} />
+                <NumberField label="Text size in box" value={label.textScale} min={10} max={100} step={1} scale={100} unit="%" onChange={(textScale) => set({ textScale })} />
               </>
             )}
           </Disclosure>
