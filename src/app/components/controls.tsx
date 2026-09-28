@@ -53,6 +53,7 @@ export function NumberInput(props: {
   scale?: number;
   unit?: string;
   label?: string;
+  disabled?: boolean;
 }) {
   const step = props.step ?? 0.1;
   const scale = props.scale ?? 1;
@@ -79,6 +80,7 @@ export function NumberInput(props: {
         className="input"
         inputMode="decimal"
         aria-label={props.label}
+        disabled={props.disabled}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}

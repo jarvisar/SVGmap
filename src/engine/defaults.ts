@@ -1,3 +1,4 @@
+import { computeLayout } from './layout/layout.ts';
 import { DEFAULT_PLACE, DEFAULT_PRODUCT } from './presets.ts';
 import {
   DEFAULTS,
@@ -15,13 +16,18 @@ export function defaultStyle(mode: OutputMode): ModeStyle {
   return structuredClone(style);
 }
 
+// 1:n of the starting map. The place's own width is ignored for the default.
+export const DEFAULT_SCALE = 20000;
+
 export function defaultRenderSettings(mode: OutputMode = 'laser'): RenderSettings {
   const place = DEFAULT_PLACE;
   const product = DEFAULT_PRODUCT;
+  const border = { ...DEFAULTS.border, style: product.border };
+  const widthM = (DEFAULT_SCALE * computeLayout(product.product, border).window.w) / 1000;
   return structuredClone({
-    area: { lon: place.lon, lat: place.lat, bearing: 0, widthM: place.widthM },
+    area: { lon: place.lon, lat: place.lat, bearing: 0, widthM },
     product: product.product,
-    border: { ...DEFAULTS.border, style: product.border },
+    border,
     mode,
     style: defaultStyle(mode),
     layers: DEFAULTS.layers,

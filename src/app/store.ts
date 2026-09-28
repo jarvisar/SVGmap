@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AreaSpec } from '../engine/geo/transform.ts';
-import type { BorderSettings, ProductSettings } from '../engine/layout/layout.ts';
+import { type BorderSettings, type ProductSettings, computeLayout } from '../engine/layout/layout.ts';
 import type { CleanupSettings } from '../engine/lines/cleanup.ts';
 import { PLACE_PRESETS, PRODUCT_PRESETS } from '../engine/presets.ts';
 import {
@@ -19,9 +19,30 @@ import { type CleanupPreset, type LaserPalette, type Settings, cleanupForPreset,
 export type View = 'map' | 'preview';
 export type PreviewLook = 'material' | 'colors';
 
+// Width of the map window in mm, which the 1:n scale is measured against.
+export function windowWidth(product: ProductSettings, border: BorderSettings): number {
+  try {
+    return computeLayout(product, border).window.w;
+  } catch {
+    return product.width;
+  }
+}
+
+export const scaleOf = (s: Pick<Settings, 'area' | 'product' | 'border'>) => (s.area.widthM / windowWidth(s.product, s.border)) * 1000;
+
+// With the scale locked, a new product or border resizes the map area instead
+// of changing the scale.
+function keepScale(s: AppState, product: ProductSettings, border: BorderSettings): Partial<AppState> {
+  if (!s.scaleLocked) return {};
+  const ratio = windowWidth(product, border) / windowWidth(s.product, s.border);
+  return { area: { ...s.area, widthM: s.area.widthM * ratio } };
+}
+
 interface Actions {
   set: (patch: Partial<Settings>) => void;
+  // Ignores widthM while the scale is locked.
   setArea: (patch: Partial<AreaSpec>) => void;
+  setScale: (scale: number) => void;
   setProduct: (patch: Partial<ProductSettings>) => void;
   applyProductPreset: (id: string) => void;
   applyPlace: (id: string) => void;
@@ -46,6 +67,8 @@ export interface AppState extends Settings, Actions {
   setPreviewLook: (look: PreviewLook) => void;
   customFontName: string | null;
   setCustomFontName: (name: string | null) => void;
+  scaleLocked: boolean;
+  setScaleLocked: (locked: boolean) => void;
 }
 
 export const useApp = create<AppState>()(
@@ -58,34 +81,45 @@ export const useApp = create<AppState>()(
       setPreviewLook: (previewLook) => set({ previewLook }),
       customFontName: null,
       setCustomFontName: (customFontName) => set({ customFontName }),
+      scaleLocked: false,
+      setScaleLocked: (scaleLocked) => set({ scaleLocked }),
       set: (patch) => set(patch),
-      setArea: (patch) => set((s) => ({ area: { ...s.area, ...patch } })),
+      setArea: (patch) =>
+        set((s) => ({ area: { ...s.area, ...patch, widthM: s.scaleLocked ? s.area.widthM : (patch.widthM ?? s.area.widthM) } })),
+      setScale: (scale) => set((s) => ({ area: { ...s.area, widthM: (scale * windowWidth(s.product, s.border)) / 1000 } })),
       setProduct: (patch) =>
         set((s) => {
           const product = { ...s.product, ...patch };
           if (product.shape === 'circle') product.height = product.width;
-          return { product, productPreset: 'custom' };
+          return { product, productPreset: 'custom', ...keepScale(s, product, s.border) };
         }),
       applyProductPreset: (id) => {
         const preset = PRODUCT_PRESETS.find((p) => p.id === id);
         if (!preset) return set({ productPreset: 'custom' });
         const s = get();
+        const product = structuredClone(preset.product);
+        const border = { ...s.border, style: preset.border };
         set({
           productPreset: id,
-          product: structuredClone(preset.product),
-          border: { ...s.border, style: preset.border },
+          product,
+          border,
           label: { ...s.label, style: preset.labelStyle },
+          ...keepScale(s, product, border),
         });
       },
       applyPlace: (id) => {
         const place = PLACE_PRESETS.find((p) => p.id === id);
         if (!place) return;
         set((s) => ({
-          area: { lon: place.lon, lat: place.lat, bearing: 0, widthM: place.widthM },
+          area: { lon: place.lon, lat: place.lat, bearing: 0, widthM: s.scaleLocked ? s.area.widthM : place.widthM },
           label: { ...s.label, text: place.label },
         }));
       },
-      setBorder: (patch) => set((s) => ({ border: { ...s.border, ...patch } })),
+      setBorder: (patch) =>
+        set((s) => {
+          const border = { ...s.border, ...patch };
+          return { border, ...keepScale(s, s.product, border) };
+        }),
       setMode: (mode) =>
         set((s) => ({
           mode,
@@ -125,7 +159,12 @@ export const useApp = create<AppState>()(
       reset: () =>
         set((s) => {
           const defaults = defaultSettings();
-          return { ...defaults, area: s.area, label: { ...defaults.label, text: s.label.text } };
+          return {
+            ...defaults,
+            area: s.area,
+            label: { ...defaults.label, text: s.label.text },
+            ...keepScale(s, defaults.product, defaults.border),
+          };
         }),
     }),
     {

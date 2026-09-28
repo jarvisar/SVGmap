@@ -270,6 +270,51 @@ button.menu-toggle,
   pointer-events: none;
 }
 
+.input:disabled {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.input-lock {
+  display: flex;
+}
+
+.input-lock .input-unit {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-lock .input {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+.lock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-left: -1px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.lock:hover {
+  background: #f4f4f4;
+}
+
+.lock.active {
+  position: relative;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
 .hint {
   margin-top: 6px;
   font-size: 12px;
@@ -608,6 +653,11 @@ button.menu-toggle,
 
 .map-overlay {
   pointer-events: none;
+}
+
+.scale-locked .maplibregl-ctrl-zoom-in,
+.scale-locked .maplibregl-ctrl-zoom-out {
+  display: none;
 }
 
 .map-hint {

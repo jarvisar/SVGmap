@@ -1,9 +1,8 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { computeLayout } from '../../engine/layout/layout.ts';
+import { useEffect, useId, useRef, useState } from 'react';
 import { PLACE_PRESETS } from '../../engine/presets.ts';
 import { Field, NumberInput, Section, Select, Slider } from '../components/controls.tsx';
 import { type Place, searchPlaces } from '../geocode.ts';
-import { useApp } from '../store.ts';
+import { scaleOf, useApp } from '../store.ts';
 
 function formatCoord(value: number, positive: string, negative: string) {
   return `${Math.abs(value).toFixed(5)}° ${value >= 0 ? positive : negative}`;
@@ -108,21 +107,34 @@ function PlaceSearch() {
   );
 }
 
+// Locking keeps the scale when zooming the map, picking a place or changing the
+// product size. The scale field itself still sets it.
+function LockButton(props: { locked: boolean; onChange: (locked: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      className={props.locked ? 'lock active' : 'lock'}
+      aria-label="Lock scale"
+      aria-pressed={props.locked}
+      title={props.locked ? 'Scale is locked' : 'Lock scale'}
+      onClick={() => props.onChange(!props.locked)}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+        <rect x="2.5" y="6.5" width="9" height="6" rx="1" />
+        <path d={props.locked ? 'M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2' : 'M4.5 6.5V4.5a2.5 2.5 0 0 1 5 0'} />
+      </svg>
+    </button>
+  );
+}
+
 export function LocationPanel() {
   const area = useApp((s) => s.area);
   const setArea = useApp((s) => s.setArea);
   const applyPlace = useApp((s) => s.applyPlace);
-  const product = useApp((s) => s.product);
-  const border = useApp((s) => s.border);
-
-  const windowWidth = useMemo(() => {
-    try {
-      return computeLayout(product, border).window.w;
-    } catch {
-      return product.width;
-    }
-  }, [product, border]);
-  const scale = Math.round((area.widthM / windowWidth) * 1000);
+  const setScale = useApp((s) => s.setScale);
+  const locked = useApp((s) => s.scaleLocked);
+  const setLocked = useApp((s) => s.setScaleLocked);
+  const scale = Math.round(useApp(scaleOf));
   const km = area.widthM / 1000;
 
   return (
@@ -147,18 +159,15 @@ export function LocationPanel() {
             max={60}
             unit="km"
             label="Map width"
+            disabled={locked}
             onChange={(v) => setArea({ widthM: v * 1000 })}
           />
         </Field>
         <Field label="Scale (1:n)">
-          <NumberInput
-            value={scale}
-            step={500}
-            min={100}
-            max={2000000}
-            label="Scale"
-            onChange={(v) => setArea({ widthM: (v * windowWidth) / 1000 })}
-          />
+          <div className="input-lock">
+            <NumberInput value={scale} step={500} min={100} max={2000000} label="Scale" onChange={setScale} />
+            <LockButton locked={locked} onChange={setLocked} />
+          </div>
         </Field>
       </div>
       <Slider

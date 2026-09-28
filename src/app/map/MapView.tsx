@@ -16,9 +16,9 @@ const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
 // MapLibre cannot find its own worker inside a bundle.
 setWorkerUrl(maplibreWorker);
 
-const HINT = matchMedia('(pointer: coarse)').matches
-  ? 'Drag to move, pinch to zoom, twist to rotate'
-  : 'Drag to move, scroll to zoom, right-drag to rotate';
+const COARSE = matchMedia('(pointer: coarse)').matches;
+const HINT = COARSE ? 'Drag to move, pinch to zoom, twist to rotate' : 'Drag to move, scroll to zoom, right-drag to rotate';
+const LOCKED_HINT = COARSE ? 'Drag to move, twist to rotate. Scale is locked' : 'Drag to move, right-drag to rotate. Scale is locked';
 
 interface Frame {
   // px per mm
@@ -71,6 +71,7 @@ export function MapView() {
   const label = useApp((s) => s.label);
   const customFontName = useApp((s) => s.customFontName);
   const setArea = useApp((s) => s.setArea);
+  const scaleLocked = useApp((s) => s.scaleLocked);
 
   const layout = useMemo(() => {
     try {
@@ -104,15 +105,32 @@ export function MapView() {
       const f = frameRef.current;
       if (programmatic.current || !f) return;
       const c = map.getCenter().wrap();
+      const { area, scaleLocked } = useApp.getState();
       const next: AreaSpec = {
         lon: c.lng,
         lat: c.lat,
         bearing: map.getBearing(),
-        widthM: f.window.w * metresPerPixel(c.lat, map.getZoom()),
+        // Keeps the stored width while locked, or the drift in metres per pixel
+        // while panning north or south would jump the map mid drag.
+        widthM: scaleLocked ? area.widthM : f.window.w * metresPerPixel(c.lat, map.getZoom()),
       };
       fromMap.current = next;
       cancelAnimationFrame(pending);
       pending = requestAnimationFrame(() => setArea(next));
+    });
+    // Pinching still zooms while locked, so put the zoom back once it stops.
+    map.on('moveend', () => {
+      const f = frameRef.current;
+      const { area, scaleLocked } = useApp.getState();
+      if (programmatic.current || !f || !scaleLocked) return;
+      const zoom = zoomForMetres(area.lat, area.widthM, f.window.w);
+      if (!Number.isFinite(zoom) || Math.abs(zoom - map.getZoom()) < 1e-3) return;
+      programmatic.current = true;
+      try {
+        map.jumpTo({ zoom });
+      } finally {
+        programmatic.current = false;
+      }
     });
     mapRef.current = map;
     const observer = new ResizeObserver(([entry]) => {
@@ -126,6 +144,15 @@ export function MapView() {
       mapRef.current = null;
     };
   }, [setArea]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const handler of [map.scrollZoom, map.doubleClickZoom, map.boxZoom]) {
+      if (scaleLocked) handler.disable();
+      else handler.enable();
+    }
+  }, [scaleLocked]);
 
   // Move the map when the frame changes or the area was set somewhere else
   // (search, presets, typed values). Areas the map reported itself are on screen.
@@ -153,10 +180,10 @@ export function MapView() {
   }, [frame, area]);
 
   return (
-    <div className="map-wrap">
+    <div className={scaleLocked ? 'map-wrap scale-locked' : 'map-wrap'}>
       <div ref={containerRef} className="map" />
       {layout && frame ? <Overlay layout={layout} frame={frame} width={size.w} height={size.h} artwork={artwork} /> : null}
-      <div className="map-hint">{HINT}</div>
+      <div className="map-hint">{scaleLocked ? LOCKED_HINT : HINT}</div>
       {labelError ? <div className="map-notice notice">{labelError}</div> : null}
     </div>
   );
