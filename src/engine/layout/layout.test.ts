@@ -71,4 +71,46 @@ describe('shapes', () => {
     const circle = makeShape('circle', 0, 0, 100, 100);
     for (const [x, y] of shapePolygon(circle, 0.01)) expect(Math.hypot(x - 50, y - 50)).toBeCloseTo(50, 9);
   });
+
+  it('fits the largest regular hexagon with flat top and bottom sides', () => {
+    const wide = makeShape('hexagon', 0, 0, 200, 100);
+    expect(wide.h).toBeCloseTo(100, 9);
+    expect(wide.w).toBeCloseTo(200 / Math.sqrt(3), 9);
+    expect(wide.x + wide.w / 2).toBeCloseTo(100, 9);
+    const tall = makeShape('hexagon', 0, 0, 100, 200);
+    expect(tall.w).toBeCloseTo(100, 9);
+    expect(tall.h).toBeCloseTo(50 * Math.sqrt(3), 9);
+    const corners = shapePolygon(tall);
+    expect(corners).toHaveLength(6);
+    expect(Math.min(...corners.map(([, y]) => y))).toBeCloseTo(tall.y, 9);
+  });
+
+  it('shrinks a hexagon by the same distance on every side', () => {
+    const outer = makeShape('hexagon', 0, 0, 100, 100);
+    const inner = insetShape(outer, 5);
+    expect(outer.h - inner.h).toBeCloseTo(10, 9);
+    const [cx, cy] = [outer.x + outer.w / 2, outer.y + outer.h / 2];
+    // The middle of the upper right side, in by 5 mm along its normal.
+    const a = Math.PI / 6;
+    const apothem = (inner.r * Math.sqrt(3)) / 2;
+    expect(distanceToEdge(outer, [cx + apothem * Math.cos(a), cy - apothem * Math.sin(a)])).toBeCloseTo(5, 9);
+  });
+
+  it('knows what is inside a hexagon', () => {
+    const shape = makeShape('hexagon', 0, 0, 100, 100);
+    const [cx, cy] = [shape.x + shape.w / 2, shape.y + shape.h / 2];
+    expect(shapeContains(shape, [cx, cy])).toBe(true);
+    expect(shapeContains(shape, [shape.x + 1, cy])).toBe(true);
+    expect(shapeContains(shape, [shape.x + 1, shape.y + 1])).toBe(false);
+    expect(shapeContains(shape, [cx + shape.r * 0.74, shape.y + 1])).toBe(false);
+    expect(shapeContains(shape, [cx + shape.r * 0.49, shape.y + 1])).toBe(true);
+  });
+
+  it('lays out a hexagonal piece with its border inside', () => {
+    const layout = computeLayout({ ...preset('coaster-100'), shape: 'hexagon' }, DEFAULT_BORDER);
+    expect(layout.canvas.kind).toBe('hexagon');
+    expect(layout.window.kind).toBe('hexagon');
+    for (const p of shapePolygon(layout.window)) expect(shapeContains(layout.canvas, p)).toBe(true);
+    expect(layout.window.w / layout.window.h).toBeCloseTo(2 / Math.sqrt(3), 9);
+  });
 });

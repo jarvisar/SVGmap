@@ -47,7 +47,7 @@ function useStartup() {
     }
     void loadStoredFont().then((font) => {
       const app = useApp.getState();
-      app.setCustomFontName(font?.name ?? null);
+      app.setCustomFont(font);
       if (font) return;
       // No stored font (cleared storage or someone else's share link), so fall back.
       if (app.label.font === CUSTOM_FONT_ID) app.setLabel({ font: DEFAULT_LABEL.font });
@@ -92,9 +92,9 @@ export function App() {
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
   const settings = useApp(useShallow(selectSettings));
-  const customFontName = useApp((s) => s.customFontName);
+  const customFontId = useApp((s) => s.customFontId);
   const renderSettings = useMemo(() => toRenderSettings(settings), [settings]);
-  const customFont = customFontName ? getCustomFont() : null;
+  const customFont = customFontId ? getCustomFont() : null;
   const key = useMemo(() => settingsKey(renderSettings, customFont), [renderSettings, customFont]);
   const status = useRender((s) => s.status);
   const progress = useRender((s) => s.progress);
@@ -113,7 +113,8 @@ export function App() {
   const generate = () => {
     setView('preview');
     setMenuOpen(false);
-    if (key !== renderedKey || status === 'error') requestRender(renderSettings, customFont);
+    // A map with tiles missing is rendered again, which tries those tiles.
+    if (key !== renderedKey || status === 'error' || result?.stats.missingTiles) requestRender(renderSettings, customFont);
   };
 
   const save = () => {

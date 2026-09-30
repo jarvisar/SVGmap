@@ -8,7 +8,7 @@ import { type Insets, type Shape, type ShapeKind, insetShape, makeShape, uniform
 
 export interface ProductSettings {
   shape: ShapeKind;
-  // A circle uses the smaller of the two.
+  // A circle uses the smaller of the two, a hexagon the largest that fits.
   width: number;
   height: number;
   cornerRadius: number;

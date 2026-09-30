@@ -1,6 +1,7 @@
 // Everything the sidebar edits. Saved in localStorage and in share links, and
 // turned into the engine's RenderSettings for each render.
 import { defaultRenderSettings, defaultStyle } from '../engine/defaults.ts';
+import { fitNumber } from '../engine/limits.ts';
 import { DEFAULT_CLEANUP, type CleanupSettings } from '../engine/lines/cleanup.ts';
 import { DEFAULT_PRODUCT } from '../engine/presets.ts';
 import {
@@ -89,7 +90,7 @@ export function toRenderSettings(s: Settings): RenderSettings {
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 // The only fields allowed to be null.
-const NULLABLE = new Set(['background', 'customFontName']);
+const NULLABLE = new Set(['background', 'customFontName', 'customFontId']);
 
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -102,28 +103,26 @@ function validString(path: string[], value: string): boolean {
   return true;
 }
 
-// The UI keeps numbers in range. These are the ones a hand-edited link could
-// set to something that breaks the map or the render.
+// The area isn't in the engine's limits, so it's checked here.
 function validNumber(path: string[], value: number): boolean {
   if (!Number.isFinite(value)) return false;
   switch (path.join('.')) {
     case 'area.widthM':
-    case 'plotter.penWidth':
-    case 'label.size':
       return value > 0;
     case 'area.lat':
       return Math.abs(value) <= 85;
     case 'area.lon':
       return Math.abs(value) <= 180;
     default:
-      return true;
+      return path[0] === 'area' || fitNumber(path, value) === value;
   }
 }
 
 // Takes each value from patch only where base has a value of the same type.
 // Saved settings and share links can come from an older build or be edited by
 // hand, so anything that doesn't fit is dropped instead of breaking the app or
-// ending up in the SVG. Colours have to be #RRGGBB.
+// ending up in the SVG. Colours have to be #RRGGBB, and numbers have to be in
+// the range the panels offer (engine/limits.ts).
 export function mergeSettings<T>(base: T, patch: unknown, path: string[] = []): T {
   if (patch === undefined) return base;
   if (isObject(base)) {

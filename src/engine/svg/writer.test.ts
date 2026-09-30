@@ -11,7 +11,7 @@ const result = (color: string, mode: RenderResult['mode'] = 'laser'): RenderResu
   groups: [
     { id: 'roads', element: 'roads', label: 'Roads', kind: 'stroke', color, strokeWidth: 0.05, paths: [{ d: 'M0,0L10,10' }], subpaths: 1, lengthMm: 14, areaMm2: 0 },
   ],
-  stats: { zoom: 14, tiles: 1, bytes: 0, cleanup: null, coverage: null, plotter: null, timings: {} },
+  stats: { zoom: 14, tiles: 1, missingTiles: 0, bytes: 0, cleanup: null, coverage: null, plotter: null, timings: {} },
   warnings: [],
   meta: {
     title: 'Test <map>',
@@ -33,6 +33,12 @@ describe('svg writer', () => {
       expect(svg).not.toContain('<script');
       expect(svg).toContain('<title>Test &lt;map&gt;</title>');
     }
+  });
+
+  it('fills the background in the piece shape', () => {
+    const round = { ...result('#FFEEDD', 'print'), outline: 'M0,25A25,25 0 1 1 50,25A25,25 0 1 1 0,25Z' };
+    expect(toSvg(round)).toContain('<path id="background" d="M0,25A25,25 0 1 1 50,25A25,25 0 1 1 0,25Z" fill="#FFEEDD"/>');
+    expect(toSvg(result('#FFEEDD'))).not.toContain('id="background"');
   });
 
   it('sizes the file in millimetres', () => {

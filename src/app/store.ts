@@ -13,6 +13,8 @@ import {
   printStyle,
 } from '../engine/settings.ts';
 import type { LabelSettings } from '../engine/text/label.ts';
+import { fontFingerprint } from '../engine/text/fonts.ts';
+import type { CustomFont } from '../engine/text/loadFont.ts';
 import type { FeatureFilters } from '../engine/tiles/schema.ts';
 import { type CleanupPreset, type LaserPalette, type Settings, cleanupForPreset, defaultSettings, mergeSettings } from './settings.ts';
 
@@ -66,7 +68,9 @@ export interface AppState extends Settings, Actions {
   previewLook: PreviewLook;
   setPreviewLook: (look: PreviewLook) => void;
   customFontName: string | null;
-  setCustomFontName: (name: string | null) => void;
+  // Fingerprint of the loaded font, so a new version with the same name still re-renders.
+  customFontId: string | null;
+  setCustomFont: (font: CustomFont | null) => void;
   scaleLocked: boolean;
   setScaleLocked: (locked: boolean) => void;
 }
@@ -80,7 +84,8 @@ export const useApp = create<AppState>()(
       previewLook: 'material',
       setPreviewLook: (previewLook) => set({ previewLook }),
       customFontName: null,
-      setCustomFontName: (customFontName) => set({ customFontName }),
+      customFontId: null,
+      setCustomFont: (font) => set({ customFontName: font?.name ?? null, customFontId: font ? fontFingerprint(font.data) : null }),
       scaleLocked: false,
       setScaleLocked: (scaleLocked) => set({ scaleLocked }),
       set: (patch) => set(patch),
@@ -91,6 +96,8 @@ export const useApp = create<AppState>()(
         set((s) => {
           const product = { ...s.product, ...patch };
           if (product.shape === 'circle') product.height = product.width;
+          // Width is corner to corner, height is between the flat sides.
+          if (product.shape === 'hexagon') product.height = (product.width * Math.sqrt(3)) / 2;
           return { product, productPreset: 'custom', ...keepScale(s, product, s.border) };
         }),
       applyProductPreset: (id) => {

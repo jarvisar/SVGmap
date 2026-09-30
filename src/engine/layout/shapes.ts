@@ -1,9 +1,9 @@
-// Rectangle, rounded rectangle and circle. All convex, so lines clip to them
-// exactly and "is this end on the crop edge" is a simple distance.
-import type { Path, Point } from '../lines/geometry.ts';
+// Rectangle, rounded rectangle, circle and hexagon. All convex, so lines clip
+// to them exactly and "is this end on the crop edge" is a simple distance.
+import { type Path, type Point, pointSegmentDistanceSq } from '../lines/geometry.ts';
 import { fmt } from '../svg/format.ts';
 
-export type ShapeKind = 'rect' | 'rounded' | 'circle';
+export type ShapeKind = 'rect' | 'rounded' | 'circle' | 'hexagon';
 
 export interface Shape {
   kind: ShapeKind;
@@ -11,7 +11,7 @@ export interface Shape {
   y: number;
   w: number;
   h: number;
-  // Corner radius. Half the width for a circle.
+  // Corner radius. Half the width for a circle and a hexagon.
   r: number;
 }
 
@@ -24,11 +24,19 @@ export interface Insets {
 
 export const uniformInsets = (d: number): Insets => ({ top: d, right: d, bottom: d, left: d });
 
+// Hexagons are regular with flat top and bottom sides, like the 3D model's.
+const HEX_RATIO = Math.sqrt(3) / 2;
+
+function hexagon(cx: number, cy: number, r: number): Shape {
+  return { kind: 'hexagon', x: cx - r, y: cy - r * HEX_RATIO, w: 2 * r, h: 2 * r * HEX_RATIO, r };
+}
+
 export function makeShape(kind: ShapeKind, x: number, y: number, w: number, h: number, radius = 0): Shape {
   if (kind === 'circle') {
     const d = Math.min(w, h);
     return { kind, x: x + (w - d) / 2, y: y + (h - d) / 2, w: d, h: d, r: d / 2 };
   }
+  if (kind === 'hexagon') return hexagon(x + w / 2, y + h / 2, Math.min(w / 2, h / (2 * HEX_RATIO)));
   if (kind === 'rounded') {
     return { kind, x, y, w, h, r: Math.max(0, Math.min(radius, w / 2, h / 2)) };
   }
@@ -43,6 +51,12 @@ export function insetShape(shape: Shape, insets: Insets | number): Shape {
     const r = Math.max(0, shape.r - d);
     return { kind: 'circle', x: shape.x + shape.r - r, y: shape.y + shape.r - r, w: 2 * r, h: 2 * r, r };
   }
+  if (shape.kind === 'hexagon') {
+    // Moving each side in by d takes d / cos 30° off the corners.
+    const d = Math.max(i.top, i.right, i.bottom, i.left);
+    const [cx, cy] = shapeCentre(shape);
+    return hexagon(cx, cy, Math.max(0, shape.r - d / HEX_RATIO));
+  }
   const w = Math.max(0, shape.w - i.left - i.right);
   const h = Math.max(0, shape.h - i.top - i.bottom);
   const shrink = Math.min(i.top, i.right, i.bottom, i.left);
@@ -54,6 +68,16 @@ export function shapeCentre(shape: Shape): Point {
   return [shape.x + shape.w / 2, shape.y + shape.h / 2];
 }
 
+function hexagonCorners(shape: Shape): Path {
+  const [cx, cy] = shapeCentre(shape);
+  const out: Path = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i;
+    out.push([cx + shape.r * Math.cos(a), cy + shape.r * Math.sin(a)]);
+  }
+  return out;
+}
+
 function arcSteps(radius: number, sweep: number, tolerance: number): number {
   if (radius <= tolerance) return 1;
   const step = 2 * Math.acos(Math.max(-1, 1 - tolerance / radius));
@@ -63,6 +87,7 @@ function arcSteps(radius: number, sweep: number, tolerance: number): number {
 // Polygon for clipping, arcs within tolerance mm. The SVG output uses real arcs.
 export function shapePolygon(shape: Shape, tolerance = 0.005): Path {
   const { x, y, w, h } = shape;
+  if (shape.kind === 'hexagon') return hexagonCorners(shape);
   if (shape.kind === 'rect' || shape.r <= 0) {
     return [
       [x, y],
@@ -109,6 +134,11 @@ export function shapePathD(shape: Shape, reverse = false): string {
     const cy = y + r;
     return `M${fmt(cx - r)},${fmt(cy)}A${fmt(r)},${fmt(r)} 0 1 ${sweep} ${fmt(cx + r)},${fmt(cy)}A${fmt(r)},${fmt(r)} 0 1 ${sweep} ${fmt(cx - r)},${fmt(cy)}Z`;
   }
+  if (shape.kind === 'hexagon') {
+    const corners = hexagonCorners(shape);
+    if (reverse) corners.reverse();
+    return corners.map(([px, py], i) => `${i ? 'L' : 'M'}${fmt(px)},${fmt(py)}`).join('') + 'Z';
+  }
   const r = shape.kind === 'rounded' ? shape.r : 0;
   if (r <= 0) {
     return reverse
@@ -140,6 +170,12 @@ export function distanceToEdge(shape: Shape, p: Point): number {
     const [cx, cy] = shapeCentre(shape);
     return Math.abs(shape.r - Math.hypot(px - cx, py - cy));
   }
+  if (shape.kind === 'hexagon') {
+    const corners = hexagonCorners(shape);
+    let best = Infinity;
+    for (let i = 0; i < 6; i++) best = Math.min(best, pointSegmentDistanceSq(p, corners[i], corners[(i + 1) % 6]));
+    return Math.sqrt(best);
+  }
   const r = shape.kind === 'rounded' ? shape.r : 0;
   const left = shape.x + r;
   const right = shape.x + shape.w - r;
@@ -164,6 +200,10 @@ export function shapeContains(shape: Shape, p: Point): boolean {
   if (shape.kind === 'circle') {
     const [cx, cy] = shapeCentre(shape);
     return Math.hypot(px - cx, py - cy) <= shape.r;
+  }
+  if (shape.kind === 'hexagon') {
+    const [cx, cy] = shapeCentre(shape);
+    return Math.abs(px - cx) <= shape.r - Math.abs(py - cy) / Math.sqrt(3);
   }
   if (shape.kind === 'rounded' && shape.r > 0) {
     const r = shape.r;

@@ -105,8 +105,10 @@ export function Preview(props: { onGenerate: () => void }) {
   }, []);
 
   const fit = useCallback(() => {
-    if (!result || size.w === 0) return;
-    const scale = Math.min(size.w / (result.width * 1.12), (size.h - 40) / (result.height * 1.12));
+    if (!result || size.w === 0 || size.h === 0) return;
+    // A short stage still keeps half its height for the piece, or the scale
+    // and the view box went negative.
+    const scale = Math.min(size.w / (result.width * 1.12), Math.max(size.h - 40, size.h / 2) / (result.height * 1.12));
     const w = size.w / scale;
     const h = size.h / scale;
     setBox({ x: result.width / 2 - w / 2, y: result.height / 2 - h / 2 + 20 / scale, w });

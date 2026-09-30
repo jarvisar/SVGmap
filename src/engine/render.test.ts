@@ -6,6 +6,7 @@ import { type ComposeFonts, compose } from './compose.ts';
 import { defaultRenderSettings } from './defaults.ts';
 import { TILE_EXTENT, worldToLonLat } from './geo/mercator.ts';
 import { computeLayout } from './layout/layout.ts';
+import { insetShape, shapeContains } from './layout/shapes.ts';
 import { planTiles, prepareArea } from './prepare.ts';
 import type { OutputMode, RenderSettings } from './settings.ts';
 import { toSvg } from './svg/writer.ts';
@@ -14,7 +15,7 @@ import { parseOutlineFont } from './text/loadFont.ts';
 import { acceptPolygon } from './tiles/schema.ts';
 import { areaMm2, intersectWith, resolveSurfaces, unionAll } from './fills.ts';
 
-const tile = new Uint8Array(readFileSync('src/engine/fixtures/vancouver-14-2589-5606.pbf'));
+const tile = new Uint8Array(readFileSync(new URL('./fixtures/vancouver-14-2589-5606.pbf', import.meta.url)));
 const centre = worldToLonLat(2589.5 * TILE_EXTENT, 5606.5 * TILE_EXTENT, 14);
 const font = { kind: 'stroke' as const, font: parseHershey(JSON.parse(readFileSync('public/fonts/hershey/futural.json', 'utf8')) as HersheyFile) };
 
@@ -81,6 +82,30 @@ describe('rendering a real tile', () => {
     expect(result.stats.plotter!.penUpMm).toBeLessThan(result.stats.plotter!.penUpUnorderedMm);
   });
 
+  it('reports the pen travel of the file as written', () => {
+    // Travel between subpaths in document order, from the origin.
+    const travelIn = (svg: string) => {
+      let here = [0, 0];
+      let travel = 0;
+      for (const [, d] of svg.matchAll(/ d="([^"]+)"/g)) {
+        for (const sub of d.split('M').slice(1)) {
+          const points = sub.split('L').map((p) => p.split(',').map(Number));
+          travel += Math.hypot(points[0][0] - here[0], points[0][1] - here[1]);
+          here = points[points.length - 1];
+        }
+      }
+      return travel;
+    };
+    const style = defaultRenderSettings('plotter').style;
+    // Pens that take turns in draw order.
+    const colors = { ...style.colors, water: '#0000FF', buildings: '#000000', roads: '#0000FF', paths: '#000000' };
+    for (const optimize of [true, false]) {
+      const { result } = render('plotter', { plotter: { penWidth: 0.3, optimize }, style: { ...style, colors } });
+      expect(result.stats.plotter!.pens).toBe(new Set(result.groups.map((g) => g.color)).size);
+      expect(travelIn(toSvg(result))).toBeCloseTo(result.stats.plotter!.penUpMm, 0);
+    }
+  });
+
   it('gives an outline title and a single-line subtitle their own groups', () => {
     const bytes = readFileSync('public/fonts/Montserrat-SemiBold.ttf');
     const montserrat = parseOutlineFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
@@ -132,6 +157,20 @@ describe('rendering a real tile', () => {
     expect(plan.tiles.length).toBeLessThanOrEqual(2000);
     expect(plan.zoom).toBeLessThan(14);
     expect(plan.warnings).toHaveLength(1);
+  });
+
+  it('keeps everything inside a hexagonal piece', () => {
+    const piece = render('plotter', {
+      product: { shape: 'hexagon', width: 120, height: 120, cornerRadius: 0, margins: { top: 2, right: 2, bottom: 2, left: 2 } },
+    });
+    const layout = computeLayout(piece.settings.product, piece.settings.border);
+    const edge = insetShape(layout.canvas, -0.001);
+    for (const group of piece.result.groups) {
+      for (const p of group.paths) {
+        for (const [, x, y] of p.d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)) expect(shapeContains(edge, [Number(x), Number(y)])).toBe(true);
+      }
+    }
+    expect(piece.result.groups.map((g) => g.id)).toEqual(expect.arrayContaining(['buildings', 'roads', 'band', 'border']));
   });
 
   it('keeps everything inside a round piece', () => {

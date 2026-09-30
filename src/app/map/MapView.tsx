@@ -86,7 +86,7 @@ export function MapView() {
   const product = useApp((s) => s.product);
   const border = useApp((s) => s.border);
   const label = useApp((s) => s.label);
-  const customFontName = useApp((s) => s.customFontName);
+  const customFontId = useApp((s) => s.customFontId);
   const setArea = useApp((s) => s.setArea);
   const scaleLocked = useApp((s) => s.scaleLocked);
   const setScaleLocked = useApp((s) => s.setScaleLocked);
@@ -101,7 +101,7 @@ export function MapView() {
   }, [product, border]);
   const frame = useMemo(() => (layout && size.w > 0 ? fitFrame(layout, size.w, size.h) : null), [layout, size]);
   frameRef.current = frame;
-  const { artwork, error: labelError } = useLabelArtwork(layout, label, customFontName);
+  const { artwork, error: labelError } = useLabelArtwork(layout, label, customFontId);
 
   useEffect(() => {
     const container = containerRef.current;

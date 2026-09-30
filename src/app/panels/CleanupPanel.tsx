@@ -1,3 +1,4 @@
+import { fieldRange } from '../../engine/limits.ts';
 import type { CleanupSettings } from '../../engine/lines/cleanup.ts';
 import { Check, Disclosure, NumberField, Section, Segmented, Slider } from '../components/controls.tsx';
 import type { CleanupPreset } from '../settings.ts';
@@ -20,12 +21,12 @@ export function CleanupPanel() {
   const setPreset = useApp((s) => s.setCleanupPreset);
   const set = useApp((s) => s.setCleanup);
 
-  const num = (key: NumberKey, label: string, step: number, unit?: string, max?: number) => (
-    <NumberField label={label} value={c[key]} min={0} max={max} step={step} unit={unit} onChange={(v) => set({ [key]: v })} />
+  const num = (key: NumberKey, label: string, step: number, unit?: string) => (
+    <NumberField label={label} value={c[key]} {...fieldRange(`cleanup.${key}`)} step={step} unit={unit} onChange={(v) => set({ [key]: v })} />
   );
   // Fractions and multipliers, shown as a percentage.
-  const pct = (key: NumberKey, label: string, max = 100) => (
-    <NumberField label={label} value={c[key]} min={0} max={max} step={1} scale={100} unit="%" onChange={(v) => set({ [key]: v })} />
+  const pct = (key: NumberKey, label: string) => (
+    <NumberField label={label} value={c[key]} {...fieldRange(`cleanup.${key}`, 100)} step={1} scale={100} unit="%" onChange={(v) => set({ [key]: v })} />
   );
   const check = (key: BooleanKey, label: string) => <Check label={label} checked={c[key]} onChange={(v) => set({ [key]: v })} />;
 
@@ -49,7 +50,8 @@ export function CleanupPanel() {
             label="Line spacing"
             value={c.lineSpacing}
             min={0}
-            max={1.5}
+            // Enough for a laser at a usable step, and more when a thick pen needs it.
+            max={Math.max(1.5, Math.ceil(c.lineSpacing * 10) / 10)}
             step={0.01}
             unit="mm"
             onChange={(lineSpacing) => set({ lineSpacing })}
@@ -60,54 +62,54 @@ export function CleanupPanel() {
             {check('weld', 'Join pieces that meet end to end')}
             {check('weldThroughJunctions', 'Continue through junctions into the straightest street')}
             <div className="row">
-              {num('weldTolerance', 'Join tolerance', 0.005, 'mm', 1)}
-              {num('junctionMaxTurn', 'Max turn', 1, '°', 90)}
+              {num('weldTolerance', 'Join tolerance', 0.005, 'mm')}
+              {num('junctionMaxTurn', 'Max turn', 1, '°')}
             </div>
 
             <div className="subhead">Overlaps</div>
             {check('cull', 'Remove lines that double another')}
             {check('wholePaths', 'Keep or drop whole streets')}
             <div className="row">
-              {num('parallelAngle', 'Parallel within', 1, '°', 90)}
+              {num('parallelAngle', 'Parallel within', 1, '°')}
               {pct('shadowFraction', 'Share covered')}
             </div>
 
             <div className="subhead">Gaps and dead ends</div>
             <div className="row">
-              {num('snapGap', 'Close gaps up to', 0.01, 'mm', 5)}
-              {num('pruneStubs', 'Remove stubs under', 0.05, 'mm', 10)}
+              {num('snapGap', 'Close gaps up to', 0.01, 'mm')}
+              {num('pruneStubs', 'Remove stubs under', 0.05, 'mm')}
             </div>
             {check('collapseLoops', 'Turn tiny loops into junctions')}
-            {num('loopRadius', 'Smallest open loop radius', 0.01, 'mm', 5)}
+            {num('loopRadius', 'Smallest open loop radius', 0.01, 'mm')}
 
             <div className="subhead">Footpaths</div>
             {check('aggressivePaths', 'Stronger cleanup for footpaths')}
             <div className="row">
-              {num('pathStubs', 'Footpath stubs under', 0.05, 'mm', 10)}
-              {num('tangleSpan', 'Tangle size', 0.5, 'mm', 50)}
+              {num('pathStubs', 'Footpath stubs under', 0.05, 'mm')}
+              {num('tangleSpan', 'Tangle size', 0.5, 'mm')}
             </div>
             <div className="row">
-              {num('tangleSegments', 'Tangle segments', 1, undefined, 500)}
-              {num('tangleRatio', 'Tangle length / size', 0.1, undefined, 20)}
+              {num('tangleSegments', 'Tangle segments', 1)}
+              {num('tangleRatio', 'Tangle length / size', 0.1)}
             </div>
 
             <div className="subhead">Dense areas</div>
             {check('dense', 'Thin out patches that burn dark')}
             <div className="row">
-              {num('denseLimit', 'Density limit', 0.1, 'mm/mm²', 20)}
-              {num('denseWindow', 'Measured over', 0.1, 'mm', 20)}
+              {num('denseLimit', 'Density limit', 0.1, 'mm/mm²')}
+              {num('denseWindow', 'Measured over', 0.1, 'mm')}
             </div>
             <div className="row">
-              {num('denseSeparation', 'Spacing there', 0.01, 'mm', 5)}
-              {num('denseProtectRank', 'Protect roads up to rank', 1, undefined, 12)}
+              {num('denseSeparation', 'Spacing there', 0.01, 'mm')}
+              {num('denseProtectRank', 'Protect roads up to rank', 1)}
             </div>
             <div className="row">
               {pct('denseHotFraction', 'Share in patch')}
               {pct('denseShadowFraction', 'Share doubled')}
             </div>
             <div className="row">
-              {num('denseMeshMax', 'Mesh links under', 0.1, 'mm', 20)}
-              {pct('denseMeshDetour', 'Max detour', 2000)}
+              {num('denseMeshMax', 'Mesh links under', 0.1, 'mm')}
+              {pct('denseMeshDetour', 'Max detour')}
             </div>
             {check('denseCountsFill', 'Count filled areas as dark')}
             {pct('denseCoveredScale', 'Limit over filled areas')}

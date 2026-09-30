@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { download } from '../../engine/download.ts';
 import type { Layout } from '../../engine/layout/layout.ts';
 import { type LabelArtwork, type LabelSettings, buildLabel } from '../../engine/text/label.ts';
 import type { FontLoader } from '../../engine/text/loadFont.ts';
@@ -7,14 +8,22 @@ import { getCustomFont } from '../customFont.ts';
 let loader: Promise<FontLoader> | null = null;
 
 // opentype.js is loaded on demand so it isn't part of the first page load.
+// Same idle limit as the render worker's fonts: a font that never finishes
+// would otherwise hold the title overlay, and every later load of it.
 function fontLoader(): Promise<FontLoader> {
   loader ??= import('../../engine/text/loadFont.ts').then(
     ({ FontLoader }) =>
       new FontLoader(async (path) => {
-        const response = await fetch(new URL(path, new URL(import.meta.env.BASE_URL, document.baseURI)));
-        if (!response.ok) throw new Error(`Could not load ${path}.`);
-        return response.arrayBuffer();
+        const url = new URL(path, new URL(import.meta.env.BASE_URL, document.baseURI)).href;
+        const { status, bytes } = await download(url, 30_000);
+        if (!bytes) throw new Error(`Could not load ${path} (${status}).`);
+        return bytes;
       }),
+    (error: unknown) => {
+      // Try the chunk again next time, it may have been a dropped connection.
+      loader = null;
+      throw error;
+    },
   );
   return loader;
 }
@@ -26,7 +35,7 @@ export interface LabelPreview {
 }
 
 // Lays out the title on the main thread for the map overlay.
-export function useLabelArtwork(layout: Layout | null, label: LabelSettings, customFontName: string | null): LabelPreview {
+export function useLabelArtwork(layout: Layout | null, label: LabelSettings, customFontId: string | null): LabelPreview {
   const [preview, setPreview] = useState<LabelPreview>({ artwork: null, error: null });
   useEffect(() => {
     let active = true;
@@ -47,6 +56,6 @@ export function useLabelArtwork(layout: Layout | null, label: LabelSettings, cus
     return () => {
       active = false;
     };
-  }, [layout, label, customFontName]);
+  }, [layout, label, customFontId]);
   return preview;
 }

@@ -201,12 +201,14 @@ export function layoutBoxLabel(layout: Layout, s: LabelSettings, text: TextGeome
   return { knockout: [left, top, boxW, boxH], text: lettering, frame, frameWidth: border };
 }
 
-// Round pieces get narrower towards the edge.
+// Round and hexagonal pieces get narrower towards the edge.
 function availableWidthAt(shape: Shape, y0: number, y1: number): [number, number] {
-  if (shape.kind !== 'circle') return [shape.x, shape.x + shape.w];
+  if (shape.kind !== 'circle' && shape.kind !== 'hexagon') return [shape.x, shape.x + shape.w];
   const [cx, cy] = shapeCentre(shape);
   const d = Math.max(Math.abs(y0 - cy), Math.abs(y1 - cy));
-  const half = d >= shape.r ? 0 : Math.sqrt(shape.r * shape.r - d * d);
+  let half: number;
+  if (shape.kind === 'hexagon') half = Math.max(0, shape.r - d / Math.sqrt(3));
+  else half = d >= shape.r ? 0 : Math.sqrt(shape.r * shape.r - d * d);
   return [cx - half, cx + half];
 }
 

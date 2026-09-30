@@ -324,7 +324,8 @@ export function compose(
 
   if (layout.thickBand) {
     const { outer, inner } = layout.thickBand;
-    const thickness = inner.x - outer.x;
+    // Not inner.x - outer.x: a hexagon's corners move in further than its sides.
+    const thickness = s.border.thick;
     if (plotter) {
       // Plotters draw the band as concentric passes of the pen.
       const passes = Math.max(1, Math.round(thickness / pen));
@@ -365,8 +366,15 @@ export function compose(
   lap('style');
 
   // Plotter order
+  const colorOf = (d: Draft) => style.colors[d.element];
   let plotterStats: PlotterStats | null = null;
   if (plotter) {
+    // The file puts every layer of one pen together, so the pen travels in that order.
+    const first = new Map<string, number>();
+    drafts.forEach((d, i) => {
+      if (!first.has(colorOf(d))) first.set(colorOf(d), i);
+    });
+    drafts.sort((a, b) => first.get(colorOf(a))! - first.get(colorOf(b))!);
     let penDown = 0;
     let penUp = 0;
     let penUpUnordered = 0;
@@ -397,8 +405,7 @@ export function compose(
         if (last) here = last[last.length - 1];
       }
     }
-    const pens = new Set(drafts.map((d) => style.colors[d.element])).size;
-    plotterStats = { penDownMm: penDown, penUpMm: penUp, penUpUnorderedMm: penUpUnordered, pens };
+    plotterStats = { penDownMm: penDown, penUpMm: penUp, penUpUnorderedMm: penUpUnordered, pens: 0 };
   }
 
   // Path data
@@ -431,7 +438,7 @@ export function compose(
       element: draft.element,
       label: draft.label,
       kind: draft.kind,
-      color: style.colors[draft.element],
+      color: colorOf(draft),
       strokeWidth: draft.strokeWidth,
       paths,
       subpaths,
@@ -439,6 +446,8 @@ export function compose(
       areaMm2: area,
     });
   }
+  // Only pens with something to draw get a layer.
+  if (plotterStats) plotterStats.pens = new Set(groups.map((g) => g.color)).size;
   lap('output');
 
   const centre = { lon: s.area.lon, lat: s.area.lat };
@@ -452,6 +461,7 @@ export function compose(
     stats: {
       zoom: prepared.zoom,
       tiles: prepared.tiles,
+      missingTiles: prepared.missing,
       bytes: prepared.bytes,
       cleanup: s.cleanup.enabled ? cleaned.stats : null,
       coverage,

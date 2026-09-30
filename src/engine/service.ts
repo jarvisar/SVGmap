@@ -3,8 +3,9 @@
 // decode anything again. Runs in a web worker in the app and directly in tests.
 import type { Paths64 } from 'clipper2-ts';
 import { compose } from './compose.ts';
-import { computeLayout } from './layout/layout.ts';
-import { type Prepared, planTiles, prepareArea } from './prepare.ts';
+import { type Layout, computeLayout } from './layout/layout.ts';
+import { clampRenderSettings } from './limits.ts';
+import { type Prepared, type TileData, type TilePlan, planTiles, prepareArea, tileKey } from './prepare.ts';
 import type { RenderResult } from './result.ts';
 import type { RenderSettings } from './settings.ts';
 import { type CustomFont, FontLoader } from './text/loadFont.ts';
@@ -33,13 +34,19 @@ export class CancelledError extends Error {
   }
 }
 
+interface PreparedEntry {
+  key: string;
+  value: Prepared;
+  memo: Map<string, Paths64>;
+}
+
 // Yield so a newer request can cancel this one.
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 export class RenderService {
   private readonly tiles = new TileCache();
   private readonly sources = new Map<string, TileSource>();
-  private prepared: { key: string; value: Prepared; memo: Map<string, Paths64> } | null = null;
+  private prepared: PreparedEntry | null = null;
   private readonly fonts: FontLoader;
 
   constructor(loadAsset: (path: string) => Promise<ArrayBuffer>) {
@@ -60,28 +67,13 @@ export class RenderService {
     onProgress: (progress: RenderProgress) => void = () => {},
     isCancelled: () => boolean = () => false,
   ): Promise<RenderResult> {
-    const settings = request.settings;
+    const settings = clampRenderSettings(request.settings);
     const layout = computeLayout(settings.product, settings.border);
     const plan = planTiles(settings.area, layout, settings.source);
     const key = JSON.stringify([settings.area, layout.window, plan.zoom, settings.source.tiles]);
 
     let entry = this.prepared?.key === key ? this.prepared : null;
-    if (!entry) {
-      onProgress({ stage: 'tiles', message: 'Downloading map data', done: 0, total: plan.tiles.length });
-      const data = await this.tiles.fetchAll(
-        this.source(settings.source.tiles),
-        settings.source.tiles,
-        plan.tiles,
-        (done, total) => onProgress({ stage: 'tiles', message: 'Downloading map data', done, total }),
-        isCancelled,
-      );
-      if (isCancelled()) throw new CancelledError();
-      onProgress({ stage: 'geometry', message: 'Building geometry' });
-      await tick();
-      if (isCancelled()) throw new CancelledError();
-      entry = { key, value: prepareArea(plan, layout, data), memo: new Map() };
-      this.prepared = entry;
-    }
+    if (!entry || entry.value.missing) entry = await this.prepare(key, plan, layout, settings.source.tiles, entry, onProgress, isCancelled);
 
     const label = settings.label;
     let title: LoadedFont | null = null;
@@ -96,5 +88,44 @@ export class RenderService {
     await tick();
     if (isCancelled()) throw new CancelledError();
     return compose(settings, layout, entry.value, { title, subtitle }, entry.memo);
+  }
+
+  // Geometry with tiles missing is kept, but each render after it tries those
+  // tiles once more. The ones that came through are in the tile cache.
+  private async prepare(
+    key: string,
+    plan: TilePlan,
+    layout: Layout,
+    tiles: string,
+    previous: PreparedEntry | null,
+    onProgress: (progress: RenderProgress) => void,
+    isCancelled: () => boolean,
+  ): Promise<PreparedEntry> {
+    onProgress({ stage: 'tiles', message: 'Downloading map data', done: 0, total: plan.tiles.length });
+    let data: TileData;
+    try {
+      data = await this.tiles.fetchAll(
+        this.source(tiles),
+        tiles,
+        plan.tiles,
+        (done, total) => onProgress({ stage: 'tiles', message: 'Downloading map data', done, total }),
+        isCancelled,
+        6,
+        previous ? 1 : 3,
+      );
+    } catch (error) {
+      if (previous && !isCancelled()) return previous;
+      throw error;
+    }
+    if (isCancelled()) throw new CancelledError();
+    const missing = plan.tiles.filter((tile) => !data.has(tileKey(tile))).length;
+    // Only rebuild when the retry got something the last geometry lacked.
+    if (previous && missing >= previous.value.missing) return previous;
+    onProgress({ stage: 'geometry', message: 'Building geometry' });
+    await tick();
+    if (isCancelled()) throw new CancelledError();
+    const entry = { key, value: prepareArea(plan, layout, data), memo: new Map() };
+    this.prepared = entry;
+    return entry;
   }
 }

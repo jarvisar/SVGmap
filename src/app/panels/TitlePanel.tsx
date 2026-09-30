@@ -46,7 +46,7 @@ export function TitlePanel() {
   const customFontName = useApp((s) => s.customFontName);
   const setLabel = useApp((s) => s.setLabel);
   const setStyle = useApp((s) => s.setStyle);
-  const setCustomFontName = useApp((s) => s.setCustomFontName);
+  const setCustomFont = useApp((s) => s.setCustomFont);
   const fileInput = useRef<HTMLInputElement>(null);
   const pendingField = useRef<'font' | 'subtitleFont'>('font');
   const [fontError, setFontError] = useState('');
@@ -68,8 +68,9 @@ export function TitlePanel() {
     setFontError(problem ?? '');
     if (problem) return;
     const name = file.name.replace(/\.(ttf|otf|woff)$/i, '');
-    await storeFont({ name, data });
-    setCustomFontName(name);
+    const font = { name, data };
+    await storeFont(font);
+    setCustomFont(font);
     set({ [pendingField.current]: CUSTOM_FONT_ID });
   };
   const subtitleFromCoordinates = () => {

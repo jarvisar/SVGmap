@@ -19,7 +19,7 @@ Settings are saved in the browser. `Reset settings` at the bottom of the sidebar
 The settings are:
 
 * Location sets the area. Map width and scale are two ways of saying the same thing.
-* Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded or circle), the blank margin inside the cut and the border.
+* Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border.
 * Output switches between laser, plotter and print.
 * Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline or hatching).
 * Title adds a box or a full-width band with a title and subtitle. You can load your own font file.

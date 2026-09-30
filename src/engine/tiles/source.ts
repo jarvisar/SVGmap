@@ -2,10 +2,63 @@
 // file read with range requests. It has to use the OpenMapTiles schema.
 // Only the tiles for the selected area are fetched, six at a time, and they
 // are cached so changing settings doesn't download anything again.
-import { PMTiles } from 'pmtiles';
+import { FetchSource, PMTiles, type RangeResponse, type Source } from 'pmtiles';
+import { download } from '../download.ts';
 import type { TileId } from '../prepare.ts';
 
 type Fetcher = (tile: TileId, signal?: AbortSignal) => Promise<ArrayBuffer | null>;
+
+// XYZ tiles fail after IDLE_MS with no bytes (see download.ts). PMTiles reads
+// and TileJSON get READ_MS in all.
+const IDLE_MS = 30_000;
+const READ_MS = 60_000;
+
+async function downloadTile(href: string, tile: TileId, signal?: AbortSignal): Promise<ArrayBuffer | null> {
+  const { status, ok, bytes } = await download(href, IDLE_MS, signal);
+  if (status === 204 || status === 404) return null; // empty sea/desert tile
+  if (!ok || !bytes) throw new Error(`Tile ${tile.z}/${tile.x}/${tile.y} failed with ${status}.`);
+  return maybeGunzip(bytes);
+}
+
+// Every read of a PMTiles archive, the header included, is aborted after
+// READ_MS so it lets go of its connection. pmtiles reads the header with no
+// signal at all, and a browser only keeps a few connections open to one
+// server: stalled reads that were merely given up on kept a retry from
+// reaching the server once it came back.
+class TimedSource implements Source {
+  private readonly inner: FetchSource;
+
+  constructor(url: string) {
+    this.inner = new FetchSource(url);
+  }
+
+  getKey(): string {
+    return this.inner.getKey();
+  }
+
+  async getBytes(offset: number, length: number, signal?: AbortSignal, etag?: string): Promise<RangeResponse> {
+    const controller = new AbortController();
+    const forward = () => controller.abort(signal?.reason);
+    if (signal?.aborted) forward();
+    else signal?.addEventListener('abort', forward, { once: true });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, READ_MS);
+    try {
+      return await this.inner.getBytes(offset, length, controller.signal, etag);
+    } catch (error) {
+      if (timedOut) throw new Error(`No answer from ${this.inner.url} in ${READ_MS / 1000} s.`);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', forward);
+      // Also lets go of a response refused part way, like one without range support.
+      controller.abort();
+    }
+  }
+}
 
 async function maybeGunzip(buffer: ArrayBuffer): Promise<ArrayBuffer> {
   const bytes = new Uint8Array(buffer, 0, Math.min(2, buffer.byteLength));
@@ -17,7 +70,7 @@ async function maybeGunzip(buffer: ArrayBuffer): Promise<ArrayBuffer> {
 
 async function resolveTemplate(url: string): Promise<string> {
   if (url.includes('{z}')) return url;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(READ_MS) });
   if (!response.ok) throw new Error(`The tile source answered ${response.status} (${url}).`);
   const json = (await response.json()) as { tiles?: string[] };
   const template = json.tiles?.[0];
@@ -33,9 +86,13 @@ export class TileSource {
     this.url = url.trim();
   }
 
+  private get pmtiles(): boolean {
+    return /\.pmtiles(\?|$)/i.test(this.url);
+  }
+
   private makeFetcher(): Promise<Fetcher> {
-    if (/\.pmtiles(\?|$)/i.test(this.url)) {
-      const archive = new PMTiles(this.url);
+    if (this.pmtiles) {
+      const archive = new PMTiles(new TimedSource(this.url));
       return Promise.resolve(async (tile, signal) => {
         const response = await archive.getZxy(tile.z, tile.x, tile.y, signal);
         return response ? response.data : null;
@@ -43,10 +100,7 @@ export class TileSource {
     }
     return resolveTemplate(this.url).then((template) => async (tile, signal) => {
       const href = template.replace('{z}', String(tile.z)).replace('{x}', String(tile.x)).replace('{y}', String(tile.y));
-      const response = await fetch(href, { signal });
-      if (response.status === 204 || response.status === 404) return null; // empty sea/desert tile
-      if (!response.ok) throw new Error(`Tile ${tile.z}/${tile.x}/${tile.y} failed with ${response.status}.`);
-      return maybeGunzip(await response.arrayBuffer());
+      return downloadTile(href, tile, signal);
     });
   }
 
@@ -58,7 +112,13 @@ export class TileSource {
         this.fetcher = null;
       });
     }
-    return this.fetcher.then((fetchTile) => fetchTile(tile, signal));
+    const fetcher = this.fetcher;
+    return fetcher.then((fetchTile) => fetchTile(tile, signal)).catch((error: unknown) => {
+      // The archive keeps its header read, failed or stalled, for good. A new
+      // one reads the header again.
+      if (this.pmtiles && this.fetcher === fetcher) this.fetcher = null;
+      throw error;
+    });
   }
 }
 
@@ -89,6 +149,7 @@ export class TileCache {
     onProgress: (done: number, total: number) => void,
     isCancelled: () => boolean,
     concurrency = 6,
+    attempts = 3,
   ): Promise<Map<string, ArrayBuffer | null>> {
     const out = new Map<string, ArrayBuffer | null>();
     let done = 0;
@@ -107,7 +168,7 @@ export class TileCache {
         } else {
           let pending = this.inflight.get(key);
           if (!pending) {
-            pending = this.fetchWithRetry(source, tile);
+            pending = this.fetchWithRetry(source, tile, attempts);
             this.inflight.set(key, pending);
           }
           try {
@@ -131,14 +192,14 @@ export class TileCache {
     return out;
   }
 
-  private async fetchWithRetry(source: TileSource, tile: TileId): Promise<ArrayBuffer | null> {
+  private async fetchWithRetry(source: TileSource, tile: TileId, attempts: number): Promise<ArrayBuffer | null> {
     let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < attempts; attempt++) {
       try {
         return await source.get(tile);
       } catch (error) {
         lastError = error;
-        await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        if (attempt + 1 < attempts) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
       }
     }
     throw lastError;

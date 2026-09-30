@@ -1,9 +1,12 @@
 import { CancelledError, RenderService, type RenderProgress, type RenderRequest } from '../engine/service.ts';
+import { download } from '../engine/download.ts';
 import type { RenderResult } from '../engine/result.ts';
 
-export type WorkerRequest = { type: 'render'; id: number; baseUrl: string; request: RenderRequest };
+// seq counts every message sent. The page uses the ack to tell a worker stuck in a long loop.
+export type WorkerRequest = { type: 'render'; id: number; seq: number; baseUrl: string; request: RenderRequest };
 
 export type WorkerResponse =
+  | { type: 'ack'; seq: number }
   | { type: 'progress'; id: number; progress: RenderProgress }
   | { type: 'result'; id: number; result: RenderResult }
   | { type: 'error'; id: number; message: string };
@@ -15,16 +18,20 @@ const scope = self as unknown as {
 let baseUrl = '';
 let latest = 0;
 
+// Fonts, cached by the service worker, so normally instant.
+const ASSET_IDLE_MS = 30_000;
+
 const service = new RenderService(async (path) => {
-  const response = await fetch(new URL(path, baseUrl));
-  if (!response.ok) throw new Error(`Could not load ${path} (${response.status}).`);
-  return response.arrayBuffer();
+  const { status, bytes } = await download(new URL(path, baseUrl).href, ASSET_IDLE_MS);
+  if (!bytes) throw new Error(`Could not load ${path} (${status}).`);
+  return bytes;
 });
 
 const post = (message: WorkerResponse) => scope.postMessage(message);
 
 scope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const message = event.data;
+  post({ type: 'ack', seq: message.seq });
   if (message.type !== 'render') return;
   const { id } = message;
   latest = id;

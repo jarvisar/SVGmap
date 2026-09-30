@@ -29,6 +29,9 @@ export function SizePanel() {
     if (!uniformMargin) setPerSide(true);
   }, [uniformMargin]);
   const circle = product.shape === 'circle';
+  const hexagon = product.shape === 'hexagon';
+  // Circles and hexagons shrink evenly, so they only have one margin.
+  const even = circle || hexagon;
   const landscape = product.width >= product.height;
   const summary = circle ? `⌀ ${product.width.toFixed(0)} mm` : `${product.width.toFixed(1)} × ${product.height.toFixed(1)} mm`;
 
@@ -51,6 +54,7 @@ export function SizePanel() {
             { value: 'rect', label: 'Rectangle' },
             { value: 'rounded', label: 'Rounded' },
             { value: 'circle', label: 'Circle' },
+            { value: 'hexagon', label: 'Hexagon' },
           ]}
           onChange={(shape) =>
             setProduct({ shape, cornerRadius: shape === 'rounded' && product.cornerRadius === 0 ? 6 : product.cornerRadius })
@@ -59,6 +63,17 @@ export function SizePanel() {
       </Field>
       {circle ? (
         <NumberField label="Diameter" value={product.width} min={20} max={2000} step={0.1} unit="mm" onChange={(v) => setProduct({ width: v, height: v })} />
+      ) : hexagon ? (
+        <NumberField
+          label="Width"
+          value={product.width}
+          min={20}
+          max={2000}
+          step={0.1}
+          unit="mm"
+          hint={`Corner to corner. ${product.height.toFixed(1)} mm between the flat sides.`}
+          onChange={(width) => setProduct({ width })}
+        />
       ) : (
         <>
           <div className="row">
@@ -74,12 +89,13 @@ export function SizePanel() {
                 { value: 'portrait', label: 'Portrait' },
               ]}
               onChange={(o) => {
-                if ((o === 'landscape') === landscape) return;
-                setProduct({
-                  width: product.height,
-                  height: product.width,
-                  margins: { top: m.left, right: m.top, bottom: m.right, left: m.bottom },
-                });
+                if ((o === 'landscape') === landscape || product.width === product.height) return;
+                // The margins turn with the sheet: a quarter turn clockwise to
+                // portrait and back the other way, so switching twice changes nothing.
+                const margins = landscape
+                  ? { top: m.left, right: m.top, bottom: m.right, left: m.bottom }
+                  : { top: m.right, right: m.bottom, bottom: m.left, left: m.top };
+                setProduct({ width: product.height, height: product.width, margins });
               }}
             />
           </Field>
@@ -88,7 +104,7 @@ export function SizePanel() {
       {product.shape === 'rounded' ? (
         <NumberField label="Corner radius" value={product.cornerRadius} min={0} max={200} step={0.5} unit="mm" onChange={(cornerRadius) => setProduct({ cornerRadius })} />
       ) : null}
-      {!perSide || circle ? (
+      {!perSide || even ? (
         <NumberField
           label="Margin"
           value={m.top}
@@ -114,7 +130,7 @@ export function SizePanel() {
           <div className="hint">Blank edge inside the cut, e.g. the part hidden by a frame.</div>
         </>
       )}
-      {!circle ? (
+      {!even ? (
         <Check
           label="Different margin per side"
           checked={perSide}
