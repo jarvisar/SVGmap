@@ -2,7 +2,7 @@
 
 Make SVG maps of any city from OpenStreetMap data, for laser engraving, pen plotters or print. Everything runs in the browser.
 
-Visit the [GitHub Pages site](https://svgmap.ajarvis.co/) to access the latest deployment.
+Visit the [GitHub Pages site](https://svgmap.jarvisar.com/) to access the latest deployment.
 
 <p align="center">
   <img src="docs/screenshot.png" alt="SVGmap preview of downtown Chicago"/>
