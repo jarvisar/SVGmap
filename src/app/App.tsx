@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { type DragEvent, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { toSvg } from '../engine/svg/writer.ts';
 import { CUSTOM_FONT_ID } from '../engine/text/fonts.ts';
@@ -10,10 +10,12 @@ import { DataPanel } from './panels/DataPanel.tsx';
 import { LayersPanel } from './panels/LayersPanel.tsx';
 import { LocationPanel } from './panels/LocationPanel.tsx';
 import { OutputPanel } from './panels/OutputPanel.tsx';
+import { RoutesPanel } from './panels/RoutesPanel.tsx';
 import { SizePanel } from './panels/SizePanel.tsx';
 import { TitlePanel } from './panels/TitlePanel.tsx';
 import { Preview } from './preview/Preview.tsx';
 import { renderFraction, requestRender, settingsKey, useRender } from './render.ts';
+import { importRouteFiles, useImportNotice } from './routes.ts';
 import { toRenderSettings } from './settings.ts';
 import { settingsFromUrl, shareUrl } from './share.ts';
 import { selectSettings, useApp } from './store.ts';
@@ -57,7 +59,7 @@ function useStartup() {
 }
 
 function resetSettings() {
-  if (confirm('Reset all settings to the defaults? The location and title are kept.')) useApp.getState().reset();
+  if (confirm('Reset all settings to the defaults? The location, title and routes are kept.')) useApp.getState().reset();
 }
 
 // Memoised because the map updates the area on every frame while it's dragged.
@@ -66,6 +68,7 @@ const Sidebar = memo(function Sidebar() {
   return (
     <aside className="sidebar">
       <LocationPanel />
+      <RoutesPanel />
       <SizePanel />
       <OutputPanel />
       <LayersPanel />
@@ -108,6 +111,38 @@ export function App() {
   const renderedKey = useRender((s) => s.renderedKey);
   const [menuOpen, setMenuOpen] = useState(false);
   const [flash, setFlash] = useState('');
+  const flashTimer = useRef(0);
+  const [dropping, setDropping] = useState(false);
+  const dropTimer = useRef(0);
+
+  const showFlash = (text: string) => {
+    setFlash(text);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(''), 2500);
+  };
+
+  // A route file dropped anywhere on the page. dragleave fires for every child
+  // the pointer crosses, so the overlay goes when dragover stops coming instead.
+  const isFileDrag = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
+  const onDragOver = (e: DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDropping(true);
+    clearTimeout(dropTimer.current);
+    dropTimer.current = window.setTimeout(() => setDropping(false), 200);
+  };
+  const onDrop = async (e: DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    clearTimeout(dropTimer.current);
+    setDropping(false);
+    // The browser empties the list once the event is over.
+    const files = Array.from(e.dataTransfer.files);
+    const { added, errors } = await importRouteFiles(files);
+    useImportNotice.setState({ errors });
+    if (added.length) showFlash(added.length === 1 ? `Added ${added[0]}` : `Added ${added.length} routes`);
+  };
 
   // The preview follows the settings while it is on screen.
   useEffect(() => {
@@ -132,11 +167,10 @@ export function App() {
   const share = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl(settings));
-      setFlash('Link copied');
+      showFlash('Link copied');
     } catch {
-      setFlash('Could not copy the link');
+      showFlash('Could not copy the link');
     }
-    setTimeout(() => setFlash(''), 2000);
   };
 
   let statusText = flash;
@@ -156,7 +190,7 @@ export function App() {
   }
 
   return (
-    <div className={menuOpen ? 'app menu-open' : 'app'}>
+    <div className={menuOpen ? 'app menu-open' : 'app'} onDragOver={onDragOver} onDrop={(e) => void onDrop(e)}>
       <header className="topbar">
         <button
           type="button"
@@ -204,6 +238,11 @@ export function App() {
         </div>
         {view === 'preview' ? <Preview onGenerate={generate} /> : null}
       </main>
+      {dropping ? (
+        <div className="drop-overlay">
+          <div>Drop GPX, KML, KMZ, TCX or GeoJSON files to add them as routes</div>
+        </div>
+      ) : null}
     </div>
   );
 }

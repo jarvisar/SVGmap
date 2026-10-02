@@ -46,6 +46,8 @@ export interface Layout {
   thinLine: Shape | null;
   thinWidth: number;
   window: Shape;
+  // Thin line to map. A title band's divider keeps the map this far away too.
+  innerGap: number;
   // Inner edge of the thin line. Box labels sit a gap inside it.
   labelAnchor: Shape;
   // A title band reaches the centreline of the thin line.
@@ -102,6 +104,7 @@ export function computeLayout(product: ProductSettings, border: BorderSettings):
     thinLine,
     thinWidth: border.thin,
     window,
+    innerGap: border.innerGap,
     labelAnchor: insetShape(artwork, labelInset),
     bandAnchor: insetShape(artwork, bandInset),
   };

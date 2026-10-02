@@ -10,15 +10,16 @@ Visit the [GitHub Pages site](https://svgmap.jarvisar.com/) to access the latest
 
 ## How to Use
 
-Search for a place or pick one of the example cities. Drag the map to move the frame, scroll to zoom and right-drag to rotate. On a phone, pinch to zoom and twist to rotate. The frame shows the whole piece, including the margins, border and title.
+Search for a place or pick one of the example cities. To map a run or ride, import its GPX file under Routes and the map moves to fit it. Drag the map to move the frame, scroll to zoom and right-drag to rotate. On a phone, pinch to zoom and twist to rotate. The frame shows the whole piece, including the margins, border and title.
 
 Click `Generate` to build the SVG. The preview updates as you change settings. Scroll or pinch to zoom the preview and drag to move it. Double-click it or click `Fit` to see the whole piece again. Click `Download SVG` to save the file, or `Share` to copy a link with your settings.
 
-Settings are saved in the browser. `Reset settings` at the bottom of the sidebar puts everything back to the defaults except the location and title.
+Settings are saved in the browser. `Reset settings` at the bottom of the sidebar puts everything back to the defaults except the location, title and routes.
 
 The settings are:
 
 * Location sets the area. Map width and scale are two ways of saying the same thing.
+* Routes adds runs, rides and other routes from GPX and similar files. See below.
 * Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border.
 * Output switches between laser, plotter and print.
 * Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline or hatching).
@@ -58,6 +59,18 @@ A road is never removed in favour of a less important one. The preview shows how
 
 `Line spacing` is the main setting. Set it to about your beam width, or 1.5 to 2 times your pen width. The presets change it for each output mode.
 
+## Routes
+
+Import a route under Routes, or drop the file anywhere on the page. GPX, KML, KMZ, TCX and GeoJSON files work, so an activity or route exported from Strava, Garmin Connect, Komoot or Google My Maps can go straight in. Every line in the file becomes part of one route and waypoints are skipped. Pieces of a track less than 500 m apart are joined, since watches start a new piece after a pause.
+
+The map moves to fit the routes when they're added, and `Fit map` does it again. `Fit and rotate` also turns the map when that shows the route at least 10% bigger. Both keep the route out from under the title if there's room beside it. With the scale locked they only move the map.
+
+Each mode draws the route on its own layer in its own colour. Laser engraves it as a band by default, or it can be outlined, hatched or a single scored line. Plotter fills the band with pen passes along the route, in its own pen. Print draws a coloured line. The start gets a dot and the finish a bar across the route. A loop only gets the dot.
+
+The route never goes through the line cleanup. The map gives way to it instead. Streets, paths, railways and areas closer than `Gap around it` are left out, along with leftover bits that run alongside the route or are too short to read. That way nothing is scored again inside an engraved band.
+
+Routes are simplified to within a metre when they're imported and saved with the settings, so they're kept after a reload and included in share links.
+
 ## Buildings from Overture
 
 OpenStreetMap is missing a lot of buildings outside big city centers. `Add missing buildings from Overture` under Map data fills them in from [Overture Maps](https://overturemaps.org), mostly with Microsoft's and Google's machine-learning footprints. It's off by default since it's a second download.
@@ -90,6 +103,9 @@ Run the tests with `npm test`. The live render test is skipped unless `SVGMAP_NE
 * Map tiles store coordinates to about half a metre. At large scales (under about 1:5000) curves can look slightly angular.
 * The tiles don't mark sidewalks, so they can't be removed by tag. The cleanup removes most of them because they run next to a road.
 * Only SVG export is supported. There is no DXF.
+* FIT files can't be read. Most apps and watches can export the activity as GPX instead.
+* All routes share one colour and style.
+* Routes make share links longer. One from a route planner adds well under 1 KB, but a recorded marathon can add up to about 40 KB.
 * Custom fonts can be TTF, OTF or WOFF. WOFF2 files don't load.
 * The wood preview is only a rough idea of how the fills will look. Test your settings on scrap.
 * On the very first visit, the map style loads before the service worker starts, so it isn't saved until the next visit. Going offline right after a first visit can leave the map blank, but generating still works for tiles that were loaded.

@@ -10,6 +10,8 @@ import {
   type OutputMode,
   PRINT_THEMES,
   type PlotterSettings,
+  type RouteData,
+  type RouteSettings,
   printStyle,
 } from '../engine/settings.ts';
 import type { LabelSettings } from '../engine/text/label.ts';
@@ -58,7 +60,11 @@ interface Actions {
   setCleanup: (patch: Partial<CleanupSettings>) => void;
   setFilters: (update: (filters: FeatureFilters) => FeatureFilters) => void;
   setPlotter: (patch: Partial<PlotterSettings>) => void;
-  // Everything except the place and the title text.
+  setRoutes: (patch: Partial<Omit<RouteSettings, 'items'>>) => void;
+  addRoutes: (items: RouteData[]) => void;
+  updateRoute: (id: string, patch: Partial<Omit<RouteData, 'id'>>) => void;
+  removeRoute: (id: string) => void;
+  // Everything except the place, the title text and the routes.
   reset: () => void;
 }
 
@@ -163,6 +169,11 @@ export const useApp = create<AppState>()(
             cleanup: followSpacing ? cleanupForPreset(s.cleanupPreset, 'plotter', plotter.penWidth, s.cleanup) : s.cleanup,
           };
         }),
+      setRoutes: (patch) => set((s) => ({ routes: { ...s.routes, ...patch } })),
+      addRoutes: (items) => set((s) => ({ routes: { ...s.routes, items: [...s.routes.items, ...items] } })),
+      updateRoute: (id, patch) =>
+        set((s) => ({ routes: { ...s.routes, items: s.routes.items.map((r) => (r.id === id ? { ...r, ...patch } : r)) } })),
+      removeRoute: (id) => set((s) => ({ routes: { ...s.routes, items: s.routes.items.filter((r) => r.id !== id) } })),
       reset: () =>
         set((s) => {
           const defaults = defaultSettings();
@@ -170,6 +181,7 @@ export const useApp = create<AppState>()(
             ...defaults,
             area: s.area,
             label: { ...defaults.label, text: s.label.text },
+            routes: { ...defaults.routes, items: s.routes.items },
             ...keepScale(s, defaults.product, defaults.border),
           };
         }),
@@ -203,6 +215,7 @@ export const selectSettings = (s: AppState): Settings => ({
   cleanupPreset: s.cleanupPreset,
   cleanup: s.cleanup,
   label: s.label,
+  routes: s.routes,
   source: s.source,
   plotter: s.plotter,
 });

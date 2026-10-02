@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { defaultRenderSettings } from '../engine/defaults.ts';
+import { encodePolyline } from '../engine/routes/polyline.ts';
+import type { RouteData } from '../engine/settings.ts';
 import { decodeSettings, encodeSettings } from './share.ts';
 import { defaultSettings, mergeSettings, toRenderSettings } from './settings.ts';
+import { useApp } from './store.ts';
+
+const ROUTE: RouteData = {
+  id: 'abc123',
+  name: 'Lakefront',
+  visible: true,
+  lines: [encodePolyline([[-87.62, 41.88], [-87.61, 41.9], [-87.6, 41.92]])],
+};
 
 describe('settings', () => {
   it('starts from the same defaults as the engine', () => {
@@ -86,6 +96,53 @@ describe('settings', () => {
   });
 });
 
+describe('saved routes', () => {
+  it('come back from saved settings', () => {
+    const merged = mergeSettings(defaultSettings(), { routes: { items: [ROUTE], gap: 0.8 } });
+    expect(merged.routes.items).toEqual([ROUTE]);
+    expect(merged.routes.gap).toBe(0.8);
+    expect(merged.routes.markers).toBe(true);
+    expect(toRenderSettings(merged).routes.items).toEqual([ROUTE]);
+  });
+
+  it('drop anything that is not a route', () => {
+    const merged = mergeSettings(defaultSettings(), {
+      routes: {
+        items: [
+          ROUTE,
+          { ...ROUTE, id: 'quote', lines: ['abc"/><script>'] },
+          { ...ROUTE, id: 7 },
+          { ...ROUTE, id: 'nolines', lines: 'abc' },
+          'route',
+          { ...ROUTE, id: 'hidden', visible: false, name: 'x'.repeat(500) },
+        ],
+        width: 1e9,
+      },
+    });
+    expect(merged.routes.items.map((r) => r.id)).toEqual(['abc123', 'hidden']);
+    expect(merged.routes.items[1].visible).toBe(false);
+    expect(merged.routes.items[1].name).toHaveLength(100);
+    expect(merged.routes.width).toBe(10);
+    expect(mergeSettings(defaultSettings(), { routes: { items: { 0: ROUTE } } }).routes.items).toEqual([]);
+  });
+
+  it('only accept known ways of drawing them', () => {
+    const merged = mergeSettings(defaultSettings(), { styles: { laser: { routeDraw: 'line' }, print: { routeDraw: 'glow' } } });
+    expect(merged.styles.laser.routeDraw).toBe('line');
+    expect(merged.styles.print.routeDraw).toBe(defaultSettings().styles.print.routeDraw);
+  });
+
+  it('are kept by Reset settings', () => {
+    const app = useApp.getState();
+    app.addRoutes([ROUTE]);
+    app.setRoutes({ gap: 2, markers: false });
+    useApp.getState().reset();
+    expect(useApp.getState().routes).toEqual({ ...defaultSettings().routes, items: [ROUTE] });
+    useApp.getState().removeRoute(ROUTE.id);
+    expect(useApp.getState().routes.items).toEqual([]);
+  });
+});
+
 describe('share links', () => {
   it('round-trip the settings', () => {
     const settings = defaultSettings();
@@ -105,6 +162,12 @@ describe('share links', () => {
     expect(decode(encodeSettings(settings))).toEqual({ label: { text: 'ROME' } });
     settings.source = { ...settings.source, overtureBuildings: true };
     expect(decode(encodeSettings(settings))).toEqual({ label: { text: 'ROME' }, source: { overtureBuildings: true } });
+  });
+
+  it('carry the routes', () => {
+    const settings = defaultSettings();
+    settings.routes = { ...settings.routes, items: [ROUTE, { ...ROUTE, id: 'two', visible: false }] };
+    expect(decodeSettings(encodeSettings(settings))).toEqual(settings);
   });
 
   it('ignore text that is not a share link', () => {

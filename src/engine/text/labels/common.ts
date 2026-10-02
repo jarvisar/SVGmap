@@ -1,0 +1,246 @@
+// Pieces shared by the title styles.
+import type { Path, Point } from '../../lines/geometry.ts';
+import { type Shape, shapeCentre, shapeContains } from '../../layout/shapes.ts';
+import { type TextGeometry, geometryBounds } from '../outline.ts';
+
+export class LabelError extends Error {}
+
+// Scale and bearing of the map, for the scale bar and the north arrows.
+export interface MapInfo {
+  metresPerMm: number;
+  // Degrees clockwise from north that point up.
+  bearing: number;
+}
+
+export interface LabelArtwork {
+  // Bounding box of the title, [x, y, w, h]. Routes are fitted around it.
+  knockout: [number, number, number, number];
+  // The map is left out inside these rings and within clearGap of them. A box
+  // or a band is a single rectangle.
+  clear: Path[];
+  // Open lines the map also keeps clearGap away from, like single-line letters.
+  clearLines: Path[];
+  clearGap: number;
+  // Only for the map inside the letters: the map is kept inside these rings
+  // and left out everywhere else.
+  keep: Path[] | null;
+  text: TextGeometry;
+  // Engraved areas drawn with the lettering, like a ribbon's folds or the
+  // scale bar. With reversed set, the lettering is cut out of them instead.
+  solid: Path[];
+  reversed: boolean;
+  // Box outline, divider and other line work.
+  frame: Path[];
+  frameWidth: number;
+  frameLabel: string;
+  // The border lines are left out inside these convex shapes.
+  borderBreaks: Path[];
+}
+
+export const NO_TEXT: TextGeometry = { rings: [], strokes: [] };
+
+export function artwork(parts: Partial<LabelArtwork> & Pick<LabelArtwork, 'knockout'>): LabelArtwork {
+  return {
+    clear: [],
+    clearLines: [],
+    clearGap: 0,
+    keep: null,
+    text: NO_TEXT,
+    solid: [],
+    reversed: false,
+    frame: [],
+    frameWidth: 0.25,
+    frameLabel: 'Title lines',
+    borderBreaks: [],
+    ...parts,
+  };
+}
+
+export function place(g: TextGeometry, transform: (p: Point) => Point): TextGeometry {
+  return {
+    rings: g.rings.map((r) => r.map(transform)),
+    strokes: g.strokes.map((s) => s.map(transform)),
+  };
+}
+
+export function mergeGeometry(a: TextGeometry, b: TextGeometry | null): TextGeometry {
+  if (!b) return a;
+  return { rings: [...a.rings, ...b.rings], strokes: [...a.strokes, ...b.strokes] };
+}
+
+// Text moved so its bounding box starts at 0, 0 and scaled to the height.
+export function sized(g: TextGeometry, height: number): { g: TextGeometry; w: number; h: number } {
+  const b = geometryBounds(g);
+  if (!b) throw new LabelError('The title font has no visible letters for this text.');
+  const scale = height / (b[3] - b[1]);
+  return {
+    g: place(g, ([x, y]) => [(x - b[0]) * scale, (y - b[1]) * scale]),
+    w: (b[2] - b[0]) * scale,
+    h: height,
+  };
+}
+
+export const moved = (g: TextGeometry, dx: number, dy: number): TextGeometry => place(g, ([x, y]) => [x + dx, y + dy]);
+export const scaled = (g: TextGeometry, f: number): TextGeometry => place(g, ([x, y]) => [x * f, y * f]);
+
+export function rect(x: number, y: number, w: number, h: number): Path {
+  return [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+}
+
+export function circle(cx: number, cy: number, r: number, reverse = false): Path {
+  const n = Math.min(360, Math.max(48, Math.ceil(r * 12)));
+  const out: Path = [];
+  for (let i = 0; i < n; i++) {
+    const a = ((reverse ? -1 : 1) * 2 * Math.PI * i) / n;
+    out.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return out;
+}
+
+// A closed outline as open pieces. Some laser software treats a closed path
+// as a shape to fill.
+export function openRing(ring: Path): Path[] {
+  if (ring.length < 3) return [];
+  const half = Math.ceil(ring.length / 2);
+  return [ring.slice(0, half + 1), [...ring.slice(half), ring[0]]];
+}
+
+export function boundsOf(paths: Path[]): [number, number, number, number] {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of paths) {
+    for (const [x, y] of p) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  return [minX, minY, maxX - minX, maxY - minY];
+}
+
+// Points no further apart than step, so a bend or a turn keeps its shape.
+export function subdivide(path: Path, step: number, closed: boolean): Path {
+  const out: Path = [];
+  const n = closed ? path.length : path.length - 1;
+  for (let i = 0; i < n; i++) {
+    const a = path[i];
+    const b = path[(i + 1) % path.length];
+    const parts = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
+    for (let k = 0; k < parts; k++) out.push([a[0] + ((b[0] - a[0]) * k) / parts, a[1] + ((b[1] - a[1]) * k) / parts]);
+  }
+  if (!closed && path.length) out.push(path[path.length - 1]);
+  return out;
+}
+
+export function warpText(g: TextGeometry, f: (p: Point) => Point, step: number): TextGeometry {
+  return {
+    rings: g.rings.map((r) => subdivide(r, step, true).map(f)),
+    strokes: g.strokes.map((s) => subdivide(s, step, false).map(f)),
+  };
+}
+
+// Text from sized() bent around (cx, cy), the middle of its letters on a circle
+// of radius mid. It reads clockwise over the top or anticlockwise under the bottom.
+export function bendText(g: TextGeometry, w: number, h: number, cx: number, cy: number, mid: number, top: boolean): TextGeometry {
+  return warpText(
+    g,
+    ([x, y]) => {
+      const along = (x - w / 2) / mid;
+      const up = h / 2 - y;
+      const a = top ? -Math.PI / 2 + along : Math.PI / 2 - along;
+      const r = top ? mid + up : mid - up;
+      return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+    },
+    0.1,
+  );
+}
+
+export function rotate(p: Point, centre: Point, degrees: number): Point {
+  const a = (degrees * Math.PI) / 180;
+  const dx = p[0] - centre[0];
+  const dy = p[1] - centre[1];
+  return [centre[0] + dx * Math.cos(a) - dy * Math.sin(a), centre[1] + dx * Math.sin(a) + dy * Math.cos(a)];
+}
+
+// For round and rounded pieces, where a corner position can stick out.
+export function nudgeInside(limit: Shape, x: number, y: number, w: number, h: number): [number, number] | null {
+  if (limit.kind === 'rect') return [x, y];
+  const [cx, cy] = shapeCentre(limit);
+  for (let i = 0; i <= 400; i++) {
+    const t = i / 400;
+    const nx = x + (cx - (x + w / 2)) * t;
+    const ny = y + (cy - (y + h / 2)) * t;
+    const corners: Point[] = [
+      [nx, ny],
+      [nx + w, ny],
+      [nx, ny + h],
+      [nx + w, ny + h],
+    ];
+    if (corners.every((c) => shapeContains(limit, c))) return [nx, ny];
+  }
+  return null;
+}
+
+// Round and hexagonal pieces get narrower towards the edge.
+export function availableWidthAt(shape: Shape, y0: number, y1: number): [number, number] {
+  if (shape.kind !== 'circle' && shape.kind !== 'hexagon') return [shape.x, shape.x + shape.w];
+  const [cx, cy] = shapeCentre(shape);
+  const d = Math.max(Math.abs(y0 - cy), Math.abs(y1 - cy));
+  let half: number;
+  if (shape.kind === 'hexagon') half = Math.max(0, shape.r - d / Math.sqrt(3));
+  else half = d >= shape.r ? 0 : Math.sqrt(shape.r * shape.r - d * d);
+  return [cx - half, cx + half];
+}
+
+export type CornerPosition = 'lower_right' | 'lower_left' | 'upper_right' | 'upper_left' | 'lower_center' | 'upper_center' | 'center';
+
+// Top left corner of a w x h block at a position inside limit, or null when
+// it doesn't fit.
+export function placeBlock(limit: Shape, position: CornerPosition, w: number, h: number): [number, number] | null {
+  if (w > limit.w || h > limit.h) return null;
+  const left = limit.x;
+  const top = limit.y;
+  const right = limit.x + limit.w - w;
+  const bottom = limit.y + limit.h - h;
+  const centreX = limit.x + (limit.w - w) / 2;
+  const centreY = limit.y + (limit.h - h) / 2;
+  const positions: Record<CornerPosition, [number, number]> = {
+    lower_right: [right, bottom],
+    lower_left: [left, bottom],
+    upper_right: [right, top],
+    upper_left: [left, top],
+    lower_center: [centreX, bottom],
+    upper_center: [centreX, top],
+    center: [centreX, centreY],
+  };
+  const start = positions[position] ?? positions.lower_right;
+  return nudgeInside(limit, start[0], start[1], w, h);
+}
+
+// A five-pointed star, point up.
+export function star(cx: number, cy: number, r: number): Path {
+  const out: Path = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (Math.PI * i) / 5;
+    const radius = i % 2 ? r * 0.42 : r;
+    out.push([cx + radius * Math.cos(a), cy + radius * Math.sin(a)]);
+  }
+  return out;
+}
+
+export function diamond(cx: number, cy: number, w: number, h: number): Path {
+  return [
+    [cx, cy - h / 2],
+    [cx + w / 2, cy],
+    [cx, cy + h / 2],
+    [cx - w / 2, cy],
+  ];
+}

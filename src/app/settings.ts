@@ -8,7 +8,9 @@ import {
   LASER_PALETTES,
   type ModeStyle,
   type OutputMode,
+  ROUTE_DRAWS,
   type RenderSettings,
+  type RouteData,
   defaultLineSpacing,
 } from '../engine/settings.ts';
 
@@ -82,6 +84,7 @@ export function toRenderSettings(s: Settings): RenderSettings {
     decks: s.decks,
     cleanup: s.cleanup,
     label: s.label,
+    routes: s.routes,
     source: s.source,
     plotter: s.plotter,
     title: s.label.text.trim() || 'Map',
@@ -100,7 +103,23 @@ function validString(path: string[], value: string): boolean {
   const key = path[path.length - 1];
   if (key === 'background' || path[path.length - 2] === 'colors') return HEX_COLOR.test(value);
   if (path.length === 1 && key === 'mode') return OUTPUT_MODES.includes(value);
+  if (key === 'routeDraw') return (ROUTE_DRAWS as string[]).includes(value);
   return true;
+}
+
+// Polyline characters only, so nothing else can ride along in a link.
+const POLYLINE = /^[?-~]*$/;
+const MAX_ROUTES = 50;
+
+function fitRoutes(patch: unknown): RouteData[] | undefined {
+  if (!Array.isArray(patch)) return undefined;
+  const out: RouteData[] = [];
+  for (const item of patch.slice(0, MAX_ROUTES)) {
+    if (!isObject(item) || typeof item.id !== 'string' || typeof item.name !== 'string' || !Array.isArray(item.lines)) continue;
+    if (!item.lines.every((line) => typeof line === 'string' && POLYLINE.test(line))) continue;
+    out.push({ id: item.id.slice(0, 64), name: item.name.slice(0, 100), visible: item.visible !== false, lines: item.lines as string[] });
+  }
+  return out;
 }
 
 // The area isn't in the engine's limits, so it's checked here. Other numbers
@@ -127,6 +146,8 @@ function fitSetting(path: string[], value: number): number | undefined {
 // into the range in engine/limits.ts.
 export function mergeSettings<T>(base: T, patch: unknown, path: string[] = []): T {
   if (patch === undefined) return base;
+  // The only list in the settings.
+  if (Array.isArray(base)) return ((path.join('.') === 'routes.items' ? fitRoutes(patch) : undefined) ?? base) as T;
   if (isObject(base)) {
     if (!isObject(patch)) return base;
     const out: Record<string, unknown> = { ...base };

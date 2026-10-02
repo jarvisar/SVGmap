@@ -1,4 +1,4 @@
-import type { Paths64 } from 'clipper2-ts';
+import { type Paths64, EndType, JoinType, inflatePaths } from 'clipper2-ts';
 import { SCALE } from './fills.ts';
 import type { Path, Point } from './lines/geometry.ts';
 
@@ -86,6 +86,23 @@ export function outlines(paths: Paths64): Path[] {
       ring.push([ring[0][0], ring[0][1]]);
       return ring;
     });
+}
+
+// A solid fill for narrow shapes like a route band: rings a pen width apart,
+// working in from the edge. They follow the shape, so it's long strokes instead
+// of hundreds of short hatch lines across it.
+export function contourFill(paths: Paths64, pen: number): Path[] {
+  const step = Math.max(pen, 0.05) * SCALE;
+  const inset = (rings: Paths64, delta: number) =>
+    inflatePaths(rings, -delta, JoinType.Round, EndType.Polygon, 2, Math.max(1, delta * 0.01));
+  const out: Path[] = [];
+  let rings = inset(paths, step / 2);
+  for (let pass = 0; rings.length > 0 && pass < 500; pass++) {
+    for (const line of outlines(rings)) out.push(line);
+    rings = inset(rings, step);
+  }
+  // Narrower than the pen, so the outline is as close as it gets.
+  return out.length > 0 ? out : outlines(paths);
 }
 
 export interface OrderResult {

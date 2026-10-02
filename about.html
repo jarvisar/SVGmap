@@ -251,6 +251,10 @@
           Can fill in the buildings OpenStreetMap is missing with footprints from Overture Maps, which helps a lot in
           suburbs and towns nobody has mapped yet.
         </li>
+        <li>
+          Routes from GPX, KML, TCX or GeoJSON files, like a run from Strava or a hike from Komoot. Each gets its own
+          layer, and the streets around it make room so it stays clear.
+        </li>
         <li>A title box or band. Six fonts are included, plus single-line fonts for plotters, or you can load your own.</li>
         <li>Line cleanup removes doubled and crowded lines that would burn into one dark band.</li>
         <li>Files are sized in millimetres and the text is converted to outlines, so no fonts are needed.</li>
@@ -292,6 +296,10 @@
         Overture Maps has and OpenStreetMap doesn't, straight from Overture's GeoParquet files. Most of them are
         Microsoft's and Google's machine-learning footprints. Any that mostly overlap a building already in the tiles
         are skipped, and the rest are drawn like any other building.
+      </p>
+      <p>
+        Imported routes skip the line cleanup and are drawn as they were recorded. Instead, every street, path and area
+        closer to the route than the gap is cut back, so nothing gets scored again inside an engraved band.
       </p>
       <p>
         There's no server doing the work. Tiles and decoded geometry are kept between renders, so changing a setting

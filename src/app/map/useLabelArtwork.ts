@@ -34,21 +34,27 @@ export interface LabelPreview {
   error: string | null;
 }
 
-// Lays out the title on the main thread for the map overlay.
+// Lays out the title on the main thread, for the map overlay and for fitting
+// the map to a route.
+export async function loadLabelArtwork(layout: Layout, label: LabelSettings): Promise<LabelPreview> {
+  if (!label.enabled || !label.text.trim()) return { artwork: null, error: null };
+  const custom = getCustomFont();
+  const fonts = await fontLoader();
+  const [title, subtitle] = await Promise.all([fonts.load(label.font, custom), fonts.load(label.subtitleFont || label.font, custom)]);
+  return buildLabel(layout, label, title, subtitle);
+}
+
 export function useLabelArtwork(layout: Layout | null, label: LabelSettings, customFontId: string | null): LabelPreview {
   const [preview, setPreview] = useState<LabelPreview>({ artwork: null, error: null });
   useEffect(() => {
     let active = true;
-    if (!layout || !label.enabled || !label.text.trim()) {
+    if (!layout) {
       setPreview({ artwork: null, error: null });
       return;
     }
-    const custom = getCustomFont();
-    const subtitleId = label.subtitleFont || label.font;
-    fontLoader()
-      .then((fonts) => Promise.all([fonts.load(label.font, custom), fonts.load(subtitleId, custom)]))
-      .then(([title, subtitle]) => {
-        if (active) setPreview(buildLabel(layout, label, title, subtitle));
+    loadLabelArtwork(layout, label)
+      .then((result) => {
+        if (active) setPreview(result);
       })
       .catch((error: unknown) => {
         if (active) setPreview({ artwork: null, error: error instanceof Error ? error.message : String(error) });

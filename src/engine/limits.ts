@@ -34,6 +34,9 @@ export const LIMITS: Record<string, Limit> = {
   'plotter.penWidth': { min: 0.05, max: 3 },
   'water.halo': { min: 0, max: 3 },
   'water.bridgeGap': { min: 0, max: 3 },
+  'routes.width': { min: 0.1, max: 10 },
+  'routes.gap': { min: 0, max: 10 },
+  'routes.markerSize': { min: 0.5, max: 20 },
   'source.maxZoom': { min: 0, max: 14 },
   'source.maxTiles': { min: 4, max: 2000 },
 

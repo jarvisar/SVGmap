@@ -32,12 +32,17 @@ export const LAYER_NAMES: Record<LayerId, string> = {
 
 export type FillMode = 'fill' | 'outline' | 'hatch' | 'hatch-outline';
 
-export type ElementId = LayerId | 'text' | 'frame' | 'border' | 'band' | 'cut';
+export type ElementId = LayerId | 'route' | 'text' | 'frame' | 'border' | 'band' | 'cut';
+
+// 'line' is a single stroke along the route. The rest draw a band, like a filled area.
+export type RouteDraw = 'line' | FillMode;
+export const ROUTE_DRAWS: RouteDraw[] = ['line', 'fill', 'outline', 'hatch', 'hatch-outline'];
 
 export interface ModeStyle {
   colors: Record<ElementId, string>;
   fillModes: Record<FillLayerId | 'text', FillMode>;
-  hatch: Record<FillLayerId | 'text', HatchSettings>;
+  hatch: Record<FillLayerId | 'text' | 'route', HatchSettings>;
+  routeDraw: RouteDraw;
   // Only used by print. Lasers get a hairline and plotters the pen width.
   lineWidths: Record<LineLayerId, number>;
   // Print only. Wider lines for bigger roads.
@@ -70,6 +75,25 @@ export interface SourceSettings {
   overtureBuildings: boolean;
 }
 
+// One imported route file.
+export interface RouteData {
+  id: string;
+  name: string;
+  visible: boolean;
+  // Google encoded polylines with 6 decimals, one per unbroken stretch.
+  lines: string[];
+}
+
+export interface RouteSettings {
+  items: RouteData[];
+  // Band width, and the line width in print, mm.
+  width: number;
+  // Lines and areas closer to the route than this are left out, mm.
+  gap: number;
+  markers: boolean;
+  markerSize: number;
+}
+
 export interface PlotterSettings {
   penWidth: number;
   optimize: boolean;
@@ -87,6 +111,7 @@ export interface RenderSettings {
   decks: DeckSettings;
   cleanup: CleanupSettings;
   label: LabelSettings;
+  routes: RouteSettings;
   source: SourceSettings;
   plotter: PlotterSettings;
   // SVG title.
@@ -98,6 +123,14 @@ export const DEFAULT_SOURCE: SourceSettings = {
   maxZoom: 14,
   maxTiles: 400,
   overtureBuildings: false,
+};
+
+export const DEFAULT_ROUTES: RouteSettings = {
+  items: [],
+  width: 1,
+  gap: 0.5,
+  markers: true,
+  markerSize: 2.5,
 };
 
 export const DEFAULT_FILTERS: FeatureFilters = {
@@ -141,6 +174,7 @@ const LASER_COLORS: Record<ElementId, string> = {
   paths: '#009E73',
   roads: '#D55E00',
   raceways: '#E7298A',
+  route: '#6200EA',
   text: '#000000',
   frame: '#CC79A7',
   border: '#B8860B',
@@ -167,6 +201,7 @@ export const LIGHTBURN_COLORS: Record<ElementId, string> = {
   waterways: '#00A0FF',
   aeroways: '#A000A0',
   decks: '#F0B98D',
+  route: '#D33F6A',
 };
 
 // Three processes: engrave everything filled, score every line, cut the outline.
@@ -186,6 +221,8 @@ export const MINIMAL_COLORS: Record<ElementId, string> = {
   roads: '#0000FF',
   raceways: '#0000FF',
   frame: '#0000FF',
+  // The route is a band by default, so it engraves.
+  route: '#000000',
   border: '#0000FF',
   cut: '#FF0000',
 };
@@ -215,7 +252,7 @@ const lineWidths = (w: number): Record<LineLayerId, number> => ({
   raceways: w,
 });
 
-export const DEFAULT_HATCH: Record<FillLayerId | 'text', HatchSettings> = {
+export const DEFAULT_HATCH: Record<FillLayerId | 'text' | 'route', HatchSettings> = {
   water: hatch(0.8, 0),
   greens: hatch(1.4, 45),
   sand: hatch(1.6, 30),
@@ -224,6 +261,7 @@ export const DEFAULT_HATCH: Record<FillLayerId | 'text', HatchSettings> = {
   decks: hatch(1.0, 135),
   buildings: hatch(0.7, 45),
   text: hatch(0.3, 45),
+  route: hatch(0.3, 45),
 };
 
 // A laser line needs about one kerf. A pen stroke needs its own width plus a gap.
@@ -238,6 +276,7 @@ export const LASER_STYLE: ModeStyle = {
   fillModes: fillModes('fill'),
   hatch: DEFAULT_HATCH,
   lineWidths: lineWidths(0.05),
+  routeDraw: 'fill',
   classWidths: false,
   background: null,
   cut: true,
@@ -257,6 +296,7 @@ export const PLOTTER_STYLE: ModeStyle = {
     paths: '#000000',
     roads: '#000000',
     raceways: '#C2185B',
+    route: '#D32F2F',
     text: '#000000',
     frame: '#000000',
     border: '#000000',
@@ -265,6 +305,8 @@ export const PLOTTER_STYLE: ModeStyle = {
   },
   fillModes: { ...fillModes('hatch'), buildings: 'hatch-outline', text: 'hatch-outline', decks: 'outline' },
   hatch: DEFAULT_HATCH,
+  // Drawn as pen passes along the route, not hatched.
+  routeDraw: 'fill',
   lineWidths: lineWidths(0.3),
   classWidths: false,
   background: null,
@@ -280,7 +322,7 @@ export interface PrintTheme {
 const theme = (
   name: string,
   background: string,
-  c: Partial<Record<ElementId, string>> & { ink: string; water: string; greens: string; buildings: string },
+  c: Partial<Record<ElementId, string>> & { ink: string; water: string; greens: string; buildings: string; route: string },
 ): PrintTheme => ({
   name,
   background,
@@ -297,6 +339,7 @@ const theme = (
     paths: c.paths ?? c.ink,
     roads: c.roads ?? c.ink,
     raceways: c.raceways ?? c.ink,
+    route: c.route,
     text: c.text ?? c.ink,
     frame: c.frame ?? c.ink,
     border: c.border ?? c.ink,
@@ -316,6 +359,7 @@ export const PRINT_THEMES: Record<string, PrintTheme> = {
     paths: '#8A8A8A',
     railways: '#8C6E5B',
     raceways: '#B0306A',
+    route: '#D1495B',
   }),
   minimal: theme('Minimal', '#FFFFFF', {
     ink: '#141414',
@@ -323,6 +367,7 @@ export const PRINT_THEMES: Record<string, PrintTheme> = {
     greens: '#E7EEE0',
     buildings: '#D2D2D2',
     paths: '#7A7A7A',
+    route: '#E4572E',
   }),
   blueprint: theme('Blueprint', '#173A5E', {
     ink: '#EAF2FB',
@@ -332,6 +377,7 @@ export const PRINT_THEMES: Record<string, PrintTheme> = {
     buildings: '#2F5B86',
     decks: '#1C4166',
     paths: '#9DB7D1',
+    route: '#FFC857',
   }),
   noir: theme('Noir', '#101010', {
     ink: '#F2F2F2',
@@ -341,6 +387,7 @@ export const PRINT_THEMES: Record<string, PrintTheme> = {
     buildings: '#363636',
     decks: '#141414',
     paths: '#8F8F8F',
+    route: '#FF5F45',
   }),
   terracotta: theme('Terracotta', '#F4E6D6', {
     ink: '#5A3528',
@@ -348,6 +395,7 @@ export const PRINT_THEMES: Record<string, PrintTheme> = {
     greens: '#D9D3B2',
     buildings: '#DE9A7D',
     paths: '#A0776A',
+    route: '#1F5F6B',
   }),
 };
 
@@ -358,6 +406,7 @@ export function printStyle(themeId: keyof typeof PRINT_THEMES = 'classic'): Mode
     fillModes: fillModes('fill'),
     hatch: DEFAULT_HATCH,
     lineWidths: { waterways: 0.25, railways: 0.25, paths: 0.14, roads: 0.28, raceways: 0.45 },
+    routeDraw: 'line',
     classWidths: true,
     background: t.background,
     cut: false,
@@ -383,6 +432,7 @@ export const DEFAULTS = {
   border: DEFAULT_BORDER,
   cleanup: DEFAULT_CLEANUP,
   label: DEFAULT_LABEL,
+  routes: DEFAULT_ROUTES,
   filters: DEFAULT_FILTERS,
   layers: DEFAULT_LAYERS,
   water: { halo: 0.175, bridgeGap: 0 } satisfies WaterSettings,

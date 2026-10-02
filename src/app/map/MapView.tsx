@@ -1,4 +1,4 @@
-import { Map as MapLibre, NavigationControl, setWorkerUrl } from 'maplibre-gl';
+import { type GeoJSONSource, Map as MapLibre, NavigationControl, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -9,6 +9,7 @@ import { bandPathD, shapePathD } from '../../engine/layout/shapes.ts';
 import { polylineD } from '../../engine/svg/format.ts';
 import type { LabelArtwork } from '../../engine/text/label.ts';
 import { LockIcon } from '../components/controls.tsx';
+import { routesGeoJson } from '../routes.ts';
 import { scaleOf, useApp } from '../store.ts';
 import { useLabelArtwork } from './useLabelArtwork.ts';
 
@@ -79,6 +80,9 @@ export function MapView() {
   const frameRef = useRef<Frame | null>(null);
   const fromMap = useRef<AreaSpec | null>(null);
   const programmatic = useRef(false);
+  // Sources can only be added once the style has loaded.
+  const styleLoaded = useRef(false);
+  const showRoutes = useRef(() => {});
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [nudged, setNudged] = useState(false);
 
@@ -91,6 +95,9 @@ export function MapView() {
   const scaleLocked = useApp((s) => s.scaleLocked);
   const setScaleLocked = useApp((s) => s.setScaleLocked);
   const scale = Math.round(useApp(scaleOf));
+  const routeItems = useApp((s) => s.routes.items);
+  const routeColor = useApp((s) => s.styles[s.mode].colors.route);
+  const routeData = useMemo(() => routesGeoJson(routeItems), [routeItems]);
 
   const layout = useMemo(() => {
     try {
@@ -121,6 +128,10 @@ export function MapView() {
       attributionControl: { compact: true },
     });
     map.addControl(new NavigationControl({ visualizePitch: false }), 'top-right');
+    map.on('load', () => {
+      styleLoaded.current = true;
+      showRoutes.current();
+    });
     let pending = 0;
     map.on('move', () => {
       const f = frameRef.current;
@@ -166,8 +177,39 @@ export function MapView() {
       container.removeEventListener('keydown', onKey);
       map.remove();
       mapRef.current = null;
+      styleLoaded.current = false;
     };
   }, [setArea]);
+
+  // Imported routes on the map, in the route colour on a white casing.
+  useEffect(() => {
+    const show = () => {
+      const map = mapRef.current;
+      if (!map || !styleLoaded.current) return;
+      const source = map.getSource<GeoJSONSource>('routes');
+      if (source) {
+        void source.setData(routeData);
+      } else {
+        map.addSource('routes', { type: 'geojson', data: routeData });
+        const layout = { 'line-join': 'round', 'line-cap': 'round' } as const;
+        map.addLayer({ id: 'route-casing', type: 'line', source: 'routes', layout, paint: { 'line-color': '#ffffff', 'line-width': 6, 'line-opacity': 0.85 } });
+        map.addLayer({ id: 'route-line', type: 'line', source: 'routes', layout, paint: { 'line-width': 3 } });
+        map.addLayer({
+          id: 'route-ends',
+          type: 'circle',
+          source: 'routes',
+          filter: ['==', '$type', 'Point'],
+          paint: { 'circle-radius': 4.5, 'circle-stroke-width': 2 },
+        });
+      }
+      map.setPaintProperty('route-line', 'line-color', routeColor);
+      // Filled at the start, open at the finish.
+      map.setPaintProperty('route-ends', 'circle-color', ['match', ['get', 'end'], 'start', routeColor, '#ffffff']);
+      map.setPaintProperty('route-ends', 'circle-stroke-color', routeColor);
+    };
+    showRoutes.current = show;
+    show();
+  }, [routeData, routeColor]);
 
   // Move the map when the frame changes or the area was set somewhere else
   // (search, presets, typed values). Areas the map reported itself are on screen.

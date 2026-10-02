@@ -36,6 +36,7 @@ export function defaultRenderSettings(mode: OutputMode = 'laser'): RenderSetting
     decks: DEFAULTS.decks,
     cleanup: { ...DEFAULTS.cleanup, lineSpacing: defaultLineSpacing(mode, DEFAULTS.plotter.penWidth) },
     label: { ...DEFAULTS.label, text: place.label, style: product.labelStyle },
+    routes: DEFAULTS.routes,
     source: DEFAULTS.source,
     plotter: DEFAULTS.plotter,
     title: place.name,

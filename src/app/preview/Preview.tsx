@@ -27,6 +27,7 @@ const BURN_OPACITY: Partial<Record<ElementId, number>> = {
   greens: 0.38,
   sand: 0.25,
   decks: 0.3,
+  route: 0.95,
 };
 
 function groupPaint(group: OutputGroup, result: RenderResult, look: PreviewLook) {
@@ -39,9 +40,11 @@ function groupPaint(group: OutputGroup, result: RenderResult, look: PreviewLook)
       ? { fill: BURN, fillOpacity: BURN_OPACITY[group.element] ?? 0.8, stroke: 'none' }
       : { fill: group.color, stroke: 'none' };
   }
-  const width = result.mode === 'laser' ? 0.12 : group.strokeWidth;
+  // A scored route has its own process, normally a deeper one than the streets.
+  const route = group.element === 'route';
+  const width = result.mode === 'laser' ? (route ? 0.2 : 0.12) : group.strokeWidth;
   return laserMaterial
-    ? { fill: 'none', stroke: BURN, strokeOpacity: 0.85, strokeWidth: width }
+    ? { fill: 'none', stroke: BURN, strokeOpacity: route ? 1 : 0.85, strokeWidth: width }
     : { fill: 'none', stroke: group.color, strokeWidth: width };
 }
 

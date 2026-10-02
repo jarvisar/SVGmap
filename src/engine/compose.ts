@@ -5,6 +5,7 @@ import { clipPolylineOutside } from './geo/clip.ts';
 import {
   areaMm2,
   bufferLines,
+  dilate,
   intersectWith,
   linesOutside,
   makeFillTester,
@@ -20,9 +21,10 @@ import { cleanupLines } from './lines/cleanup.ts';
 import { lineCoverage } from './lines/coverage.ts';
 import { type LineItem, type Path, pathLength } from './lines/geometry.ts';
 import { weldPaths } from './lines/weld.ts';
-import { hatchWith, orderForPlotting, outlines } from './plotter.ts';
+import { contourFill, hatchWith, orderForPlotting, outlines } from './plotter.ts';
 import type { Prepared, PreparedLine, PreparedPolygon } from './prepare.ts';
 import type { OutputGroup, OutputPath, PlotterStats, RenderResult } from './result.ts';
+import { buildRoutes, makeRouteClearer } from './routes/draw.ts';
 import {
   type ElementId,
   FILL_LAYERS,
@@ -32,6 +34,7 @@ import {
   LINE_LAYERS,
   type LineLayerId,
   ROAD_WIDTH_SCALE,
+  ROUTE_DRAWS,
   type RenderSettings,
 } from './settings.ts';
 import { polylineD } from './svg/format.ts';
@@ -81,6 +84,31 @@ function filterSignature(s: RenderSettings, layer: FillLayerId): string {
   }
 }
 
+function isConvex(ring: Path): boolean {
+  let sign = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [ax, ay] = ring[i];
+    const [bx, by] = ring[(i + 1) % ring.length];
+    const [cx, cy] = ring[(i + 2) % ring.length];
+    const cross = (bx - ax) * (cy - by) - (by - ay) * (cx - bx);
+    if (cross === 0) continue;
+    if (sign === 0) sign = Math.sign(cross);
+    else if (Math.sign(cross) !== sign) return false;
+  }
+  return true;
+}
+
+// Where the map is left out for the title. A box, band or badge is a single
+// convex ring, which lines are clipped against directly. That is much faster
+// than Clipper, which the other shapes need.
+function titleArea(label: LabelArtwork, windowPoly: Path, strokeWidth: number): { area: Paths64; convex: Path | null } {
+  if (label.keep) return { area: subtract([toPath64(windowPoly)], unionAll(label.keep.map(toPath64))), convex: null };
+  const shapes = unionAll([...label.clear.map(toPath64), ...bufferLines(label.clearLines, strokeWidth / 2, true)]);
+  const area = dilate(shapes, label.clearGap);
+  const single = label.clear.length === 1 && label.clearLines.length === 0 && label.clearGap <= 0 && isConvex(label.clear[0]);
+  return { area, convex: single ? label.clear[0] : null };
+}
+
 export function compose(
   settings: RenderSettings,
   layout: Layout,
@@ -106,19 +134,27 @@ export function compose(
   const hairline = plotter ? pen : s.mode === 'laser' ? 0.05 : 0.1;
 
   // Title
-  const built = buildLabel(layout, s.label, fonts.title, fonts.subtitle);
+  const map = { metresPerMm: prepared.transform.metresPerMm, bearing: s.area.bearing };
+  const built = buildLabel(layout, s.label, fonts.title, fonts.subtitle, map);
   if (built.error) warnings.push(built.error);
   const label: LabelArtwork | null = built.artwork;
-  const knockoutPoly: Path | null = label
-    ? [
-        [label.knockout[0], label.knockout[1]],
-        [label.knockout[0] + label.knockout[2], label.knockout[1]],
-        [label.knockout[0] + label.knockout[2], label.knockout[1] + label.knockout[3]],
-        [label.knockout[0], label.knockout[1] + label.knockout[3]],
-      ]
-    : null;
-  const knockout = knockoutPoly ? [toPath64(knockoutPoly)] : [];
+  const titleStroke = plotter ? pen : s.mode === 'laser' ? hairline : 0.3;
+  const title = label ? titleArea(label, windowPoly, titleStroke) : { area: [], convex: null };
+  const knockout = title.area;
   lap('label');
+
+  // Routes
+  const routeDraw = ROUTE_DRAWS.includes(style.routeDraw) ? style.routeDraw : 'fill';
+  const routeLineWidth = plotter ? pen : s.mode === 'laser' ? hairline : s.routes.width;
+  const route = buildRoutes(s.routes, routeDraw, routeLineWidth, prepared.transform, window, knockout);
+  if (route && route.drawnMm === 0 && route.shape.length === 0) {
+    warnings.push('The route is outside the map. Use Fit map under Routes to frame it.');
+  } else if (route && route.underTitleMm > Math.max(3, 0.03 * (route.drawnMm + route.underTitleMm))) {
+    warnings.push('Part of the route is under the title. Move the title or the map to show all of it.');
+  }
+  // What the map leaves empty: the title and the gap around the route.
+  const cutouts = route?.clear.length ? unionAll([...knockout, ...route.clear]) : knockout;
+  lap('route');
 
   // Fills
   const layerOn = s.layers;
@@ -159,7 +195,7 @@ export function compose(
   );
   const finalFill = (paths: Paths64): Paths64 => {
     let out = window.kind === 'rect' ? paths : intersectWith(paths, [toPath64(windowPoly)]);
-    if (knockout.length) out = subtract(out, knockout);
+    if (cutouts.length) out = subtract(out, cutouts);
     return out;
   };
   const fills: Record<FillLayerId, Paths64> = {
@@ -223,12 +259,17 @@ export function compose(
     if (list) list.push(item);
     else byLayer.set(item.key.layer, [item]);
   }
-  const clipLabel = (paths: Path[]): Path[] =>
-    knockoutPoly ? paths.flatMap((p) => clipPolylineOutside(p, knockoutPoly)) : paths;
+  const convexTitle = title.convex;
+  const clipLabel = (paths: Path[]): Path[] => {
+    if (convexTitle) return paths.flatMap((p) => clipPolylineOutside(p, convexTitle));
+    return knockout.length ? linesOutside(paths, knockout) : paths;
+  };
+  // After the cleanup, so the coverage only counts what the cleanup removed.
+  const clearRoute = makeRouteClearer(route?.clear ?? [], s.cleanup.lineSpacing);
 
   // Groups
   const drafts: Draft[] = [];
-  const fillDraft = (id: string, element: ElementId, name: string, paths: Paths64, mode: FillMode, hatchKey: FillLayerId | 'text') => {
+  const fillDraft = (id: string, element: ElementId, name: string, paths: Paths64, mode: FillMode, hatchKey: FillLayerId | 'text' | 'route') => {
     if (paths.length === 0) return;
     const effective: FillMode = plotter && mode === 'fill' ? 'hatch-outline' : mode;
     if (effective === 'fill') {
@@ -277,7 +318,7 @@ export function compose(
         lines: ordered.map(([cls, paths]) => ({
           cls,
           width: width * (ROAD_WIDTH_SCALE[cls] ?? 1),
-          paths: clipLabel(paths),
+          paths: clipLabel(clearRoute(paths)),
         })),
       });
     } else {
@@ -287,40 +328,68 @@ export function compose(
         label: LAYER_NAMES[layer],
         kind: 'stroke',
         strokeWidth: width,
-        lines: [{ paths: clipLabel(items.map((i) => i.path)) }],
+        lines: [{ paths: clipLabel(clearRoute(items.map((i) => i.path))) }],
       });
     }
   }
 
-  if (label) {
-    const rings = label.text.rings;
-    if (rings.length > 0) {
-      const letters = unionAll(rings.map(toPath64));
-      fillDraft('text', 'text', 'Title', letters, style.fillModes.text, 'text');
+  if (route) {
+    if (routeDraw === 'line') {
+      const sets: { paths: Path[] }[] = [{ paths: route.lines }];
+      // Laser markers are outlined so the route stays one scoring process.
+      // Print fills them below.
+      if (route.shape.length && s.mode !== 'print') sets.push({ paths: plotter ? contourFill(route.shape, pen) : outlines(route.shape) });
+      drafts.push({ id: 'route', element: 'route', label: 'Route', kind: 'stroke', strokeWidth: routeLineWidth, lines: sets });
+      if (s.mode === 'print') fillDraft('route-markers', 'route', 'Route markers', route.shape, 'fill', 'route');
+    } else if (plotter && routeDraw === 'fill') {
+      drafts.push({ id: 'route', element: 'route', label: 'Route', kind: 'stroke', strokeWidth: pen, lines: [{ paths: contourFill(route.shape, pen) }] });
+    } else {
+      fillDraft('route', 'route', 'Route', route.shape, routeDraw, 'route');
     }
-    if (label.text.strokes.length > 0) {
+  }
+
+  if (label) {
+    const letters = unionAll(label.text.rings.map(toPath64));
+    const solid = unionAll(label.solid.map(toPath64));
+    let strokes = label.text.strokes;
+    let engraved: Paths64;
+    if (label.reversed && solid.length) {
+      // Letters on the plate are left bare, and any off it are drawn as usual.
+      // Single-line letters get a width that still shows once cut out.
+      const cut = unionAll([...letters, ...bufferLines(strokes, Math.max(titleStroke, 0.4) / 2, true)]);
+      engraved = unionAll([...subtract(solid, cut), ...subtract(letters, solid)]);
+      strokes = linesOutside(strokes, solid);
+    } else {
+      engraved = unionAll([...letters, ...solid]);
+    }
+    fillDraft('text', 'text', 'Title', engraved, style.fillModes.text, 'text');
+    if (strokes.length > 0) {
       // A band can mix an outline title with a single-line subtitle, and group ids have to stay unique.
-      const mixed = rings.length > 0;
+      const mixed = engraved.length > 0;
       drafts.push({
         id: mixed ? 'text-lines' : 'text',
         element: 'text',
         label: mixed ? 'Title (single-line)' : 'Title',
         kind: 'stroke',
-        strokeWidth: plotter ? pen : s.mode === 'laser' ? hairline : 0.3,
-        lines: [{ paths: label.text.strokes }],
+        strokeWidth: titleStroke,
+        lines: [{ paths: strokes }],
       });
     }
     if (label.frame.length > 0) {
       drafts.push({
         id: 'frame',
         element: 'frame',
-        label: s.label.style === 'band' ? 'Title divider' : 'Title box',
+        label: label.frameLabel,
         kind: 'stroke',
         strokeWidth: plotter ? pen : Math.max(label.frameWidth, 0.05),
         lines: [{ paths: label.frame }],
       });
     }
   }
+
+  // The in-border title breaks the border lines around it.
+  const breaks = label?.borderBreaks ?? [];
+  const breakLines = (paths: Path[]) => breaks.reduce((out, b) => out.flatMap((p) => clipPolylineOutside(p, b)), paths);
 
   if (layout.thickBand) {
     const { outer, inner } = layout.thickBand;
@@ -334,22 +403,19 @@ export function compose(
         const ring = shapePolygon(insetShape(outer, (thickness * (i + 0.5)) / passes), 0.01);
         loops.push([...ring, ring[0]]);
       }
-      drafts.push({ id: 'band', element: 'band', label: 'Border band', kind: 'stroke', strokeWidth: pen, lines: [{ paths: loops }] });
+      drafts.push({ id: 'band', element: 'band', label: 'Border band', kind: 'stroke', strokeWidth: pen, lines: [{ paths: breakLines(loops) }] });
+    } else if (breaks.length) {
+      const band = subtract([toPath64(shapePolygon(outer, 0.01))], [toPath64(shapePolygon(inner, 0.01))]);
+      drafts.push({ id: 'band', element: 'band', label: 'Border band', kind: 'fill', strokeWidth: 0, fill: subtract(band, breaks.map(toPath64)) });
     } else {
       drafts.push({ id: 'band', element: 'band', label: 'Border band', kind: 'fill', strokeWidth: 0, d: bandPathD(outer, inner) });
     }
   }
   if (layout.thinLine) {
     const ring = shapePolygon(layout.thinLine, 0.01);
-    drafts.push({
-      id: 'border',
-      element: 'border',
-      label: 'Border line',
-      kind: 'stroke',
-      strokeWidth: plotter ? pen : layout.thinWidth,
-      d: shapePathD(layout.thinLine),
-      plotLines: [[...ring, ring[0]]],
-    });
+    const border: Draft = { id: 'border', element: 'border', label: 'Border line', kind: 'stroke', strokeWidth: plotter ? pen : layout.thinWidth };
+    if (breaks.length) drafts.push({ ...border, lines: [{ paths: breakLines([[...ring, ring[0]]]) }] });
+    else drafts.push({ ...border, d: shapePathD(layout.thinLine), plotLines: [[...ring, ring[0]]] });
   }
   if (style.cut) {
     const ring = shapePolygon(layout.canvas, 0.01);
