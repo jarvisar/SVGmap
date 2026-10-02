@@ -73,10 +73,15 @@ const Sidebar = memo(function Sidebar() {
       <CleanupPanel />
       <DataPanel />
       <div className="sidebar-footer">
+        <p className="sidebar-about">
+          SVGmap makes SVG maps of any city from OpenStreetMap data, for laser engraving, pen plotters and print.
+          Everything runs in your browser.
+        </p>
         Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, tiles by{' '}
         <a href="https://openfreemap.org">OpenFreeMap</a> and <a href="https://openmaptiles.org">OpenMapTiles</a>, search by{' '}
         <a href="https://photon.komoot.io">Photon</a>. Credit OpenStreetMap on anything you publish or sell.
         <div className="sidebar-links">
+          <a href="about">About</a>
           <a href="https://github.com/jarvisar/SVGmap">Source on GitHub</a>
           <button type="button" className="link-button" onClick={resetSettings}>
             Reset settings

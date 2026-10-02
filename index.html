@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SVGmap: SVG city maps for laser engraving, pen plotters and print</title>
+    <title>SVGmap: SVG city map generator for laser engraving, pen plotters and print</title>
     <meta
       name="description"
       content="Make SVG maps of any city from OpenStreetMap data. Pick a place and a size, then download a file ready for a laser cutter, pen plotter or printer. Free and runs in the browser."
@@ -37,6 +37,7 @@
         "applicationCategory": "DesignApplication",
         "operatingSystem": "Any",
         "browserRequirements": "Requires JavaScript",
+        "screenshot": "https://svgmap.jarvisar.com/preview.png",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
       }
     </script>
@@ -48,6 +49,23 @@
         "url": "https://svgmap.jarvisar.com/"
       }
     </script>
+    <style>
+      .boot {
+        max-width: 420px;
+        margin: 20vh auto 0;
+        padding: 0 16px;
+        color: #6f6f6f;
+        font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      }
+      .boot h1 {
+        margin: 0 0 8px;
+        font-size: 16px;
+        color: #222;
+      }
+      .boot a {
+        color: #2b7bd6;
+      }
+    </style>
     <!-- Cloudflare Web Analytics. Only on the live site, so local dev aren't counted -->
     <script>
       if (location.hostname === 'svgmap.jarvisar.com') {
@@ -60,11 +78,18 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
-    <noscript>
-      <h1>SVGmap</h1>
-      <p>Make SVG maps of any city from OpenStreetMap data, for laser engraving, pen plotters and print. SVGmap needs JavaScript to run.</p>
-    </noscript>
+    <!-- Shown while the app loads and replaced when it mounts. Also the only text crawlers see without running JS. -->
+    <div id="root">
+      <div class="boot">
+        <h1>SVGmap</h1>
+        <p>
+          Make SVG maps of any city from OpenStreetMap data, for laser engraving, pen plotters and print. Pick a place
+          and a size, then download a file ready for your laser cutter, plotter or printer.
+        </p>
+        <noscript><p>SVGmap needs JavaScript to run.</p></noscript>
+        <p><a href="about">About SVGmap</a></p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

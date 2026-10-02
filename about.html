@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About SVGmap: SVG city maps for laser engraving, pen plotters and print</title>
+    <meta
+      name="description"
+      content="SVGmap turns OpenStreetMap data into SVG maps of any city for laser cutters, pen plotters and printers. What it does, how to use it and how it works."
+    />
+    <link rel="canonical" href="https://svgmap.jarvisar.com/about" />
+    <link rel="icon" href="./favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" sizes="any" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon-180x180.png" />
+    <meta name="theme-color" content="#2b7bd6" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SVGmap" />
+    <meta property="og:title" content="About SVGmap" />
+    <meta property="og:description" content="Make SVG maps of any city from OpenStreetMap data, ready for a laser cutter, pen plotter or printer." />
+    <meta property="og:url" content="https://svgmap.jarvisar.com/about" />
+    <meta property="og:image" content="https://svgmap.jarvisar.com/preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="800" />
+    <meta property="og:image:alt" content="SVGmap preview of downtown Chicago" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script>
+      if (location.hostname === 'svgmap.jarvisar.com') {
+        const beacon = document.createElement('script');
+        beacon.type = 'module';
+        beacon.src = 'https://static.cloudflareinsights.com/beacon.min.js';
+        beacon.dataset.cfBeacon = '{"token": "a52a84e110ba48c0868dd4ae87e235b7"}';
+        document.head.appendChild(beacon);
+      }
+    </script>
+
+    <style>
+      :root {
+        --text: #222;
+        --muted: #6f6f6f;
+        --line: #e4e4e4;
+        --accent: #2b7bd6;
+        --accent-dark: #1f65b8;
+        --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font: 16px/1.6 var(--font);
+        color: var(--text);
+        background: #fff;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--accent);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 48px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .brand {
+        font-weight: 600;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .open {
+        padding: 6px 14px;
+        border-radius: 3px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 14px;
+        text-decoration: none;
+      }
+      .open:hover {
+        background: var(--accent-dark);
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+      h1 {
+        font-size: 28px;
+        line-height: 1.25;
+        margin: 16px 0;
+      }
+      h2 {
+        font-size: 20px;
+        margin: 36px 0 8px;
+      }
+      li {
+        margin: 4px 0;
+      }
+      figure {
+        margin: 24px 0;
+      }
+      img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--line);
+      }
+      figcaption,
+      footer {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      figcaption {
+        margin-top: 6px;
+      }
+      code {
+        font-size: 14px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        background: #f2f2f2;
+      }
+      footer {
+        margin-top: 48px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">SVGmap</a>
+      <a class="open" href="./">Open SVGmap</a>
+    </header>
+    <main>
+      <h1>About SVGmap</h1>
+      <p>
+        SVGmap makes SVG maps of any city from OpenStreetMap data. Pick a place and a size, and it gives you a file
+        that's ready for a laser cutter, pen plotter or printer. It's free and everything runs in your browser.
+      </p>
+
+      <figure>
+        <img src="/images/map-view.webp" width="1280" height="800" alt="Framing central Paris on the map in SVGmap" />
+        <figcaption>The frame on the map shows the whole piece, including the border and title.</figcaption>
+      </figure>
+
+      <h2>Features</h2>
+      <ul>
+        <li>Any place in the world. Search for it or start from one of the example cities.</li>
+        <li>
+          Laser mode gives every layer its own colour so it can get its own process. There's an option to use
+          LightBurn's layer colours.
+        </li>
+        <li>
+          Plotter mode turns everything into strokes, hatches filled areas and puts each pen on its own layer for
+          AxiDraw, vpype and saxi.
+        </li>
+        <li>Print mode uses coloured themes with wider lines for bigger roads.</li>
+        <li>Presets for plaques, paper sizes and coasters, or your own size. Rectangle, rounded, circle or hexagon.</li>
+        <li>Water, parks, buildings, roads, paths and railways can each be turned off, recoloured, outlined or hatched.</li>
+        <li>A title box or band. Six fonts are included, plus single-line fonts for plotters, or you can load your own.</li>
+        <li>Line cleanup removes doubled and crowded lines that would burn into one dark band.</li>
+        <li>Files are sized in millimetres and the text is converted to outlines, so no fonts are needed.</li>
+        <li>Share links that keep all your settings.</li>
+        <li>Can be installed as an app and works offline for areas you've already viewed.</li>
+      </ul>
+
+      <h2>Controls</h2>
+      <p>
+        Drag the map to move the frame, scroll to zoom and right-drag to rotate. On a phone, pinch to zoom and twist to
+        rotate. Click the lock next to the scale to keep it fixed while you move around.
+      </p>
+      <p>
+        Click <code>Generate</code> to build the SVG. The preview updates as you change settings. Scroll or pinch to zoom
+        the preview and drag to move it. Double-click it or click <code>Fit</code> to see the whole piece again. Click
+        <code>Download SVG</code> to save the file, or <code>Share</code> to copy a link with your settings.
+      </p>
+
+      <figure>
+        <img
+          src="/images/laser-preview.webp"
+          width="1280"
+          height="800"
+          loading="lazy"
+          alt="Laser preview of downtown Chicago on a 5 by 7 inch plaque"
+        />
+        <figcaption>Downtown Chicago in laser mode on a 5 × 7 in plaque.</figcaption>
+      </figure>
+
+      <h2>How It Works</h2>
+      <p>
+        SVGmap downloads OpenStreetMap vector tiles from OpenFreeMap for the area inside the frame. A city center at
+        the default scale needs 4 to 12 tiles. The tiles are decoded in a web worker and clipped to the shape of the
+        piece. Roads and paths go through the line cleanup, which started out in my Blender add-on. Then each layer is
+        merged and written out as an SVG.
+      </p>
+      <p>
+        There's no server doing the work. Tiles and decoded geometry are kept between renders, so changing a setting
+        doesn't download anything again.
+      </p>
+      <p>
+        Only SVG export is supported for now. The source and more details are on
+        <a href="https://github.com/jarvisar/SVGmap">GitHub</a>.
+      </p>
+
+      <footer>
+        Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors. Credit
+        OpenStreetMap on anything you publish or sell. Tiles by <a href="https://openfreemap.org">OpenFreeMap</a>,
+        search by <a href="https://photon.komoot.io">Photon</a>.
+      </footer>
+    </main>
+  </body>
+</html>

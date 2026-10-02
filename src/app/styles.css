@@ -620,6 +620,11 @@ button.menu-toggle,
   color: var(--faint);
 }
 
+.sidebar-about {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
 .sidebar-links {
   display: flex;
   gap: 16px;

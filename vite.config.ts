@@ -71,6 +71,10 @@ export default defineConfig({
   worker: { format: 'es' },
   build: {
     target: 'es2022',
+    // The about page is plain HTML so crawlers can read it without running the app.
+    rolldownOptions: {
+      input: { main: 'index.html', about: 'about.html' },
+    },
     sourcemap: true,
     // MapLibre alone is about 1 MB.
     chunkSizeWarningLimit: 1600,
