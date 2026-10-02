@@ -14,7 +14,9 @@ export function download(name: string, content: Blob) {
   a.href = url;
   a.download = name;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // A big PNG or zip can take a while to start saving on a slow phone, and a
+  // revoked URL fails the download.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** The name a file gets unless one's typed, like chicago-laser. */

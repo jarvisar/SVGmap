@@ -73,7 +73,8 @@ export function ExportMenu(props: { result: RenderResult | null; ready: boolean 
   const format = FORMATS[options.format];
   const fallback = result ? defaultFileName(result) : 'map';
   const save = async () => {
-    if (!result) return;
+    // Enter in the name field gets here too, past the disabled button.
+    if (!result || !ready || busy) return;
     setBusy(true);
     try {
       const file = await exportFile(result, options, look, cleanFileName(name, fallback));
@@ -154,7 +155,7 @@ export function ExportMenu(props: { result: RenderResult | null; ready: boolean 
           <div className="field">
             <label htmlFor={`${id}-name`}>File name</label>
             <div className="input-unit">
-              <input id={`${id}-name`} className="input" value={name} placeholder={fallback} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void save()} />
+              <input id={`${id}-name`} className="input" value={name} placeholder={fallback} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && void save()} />
               <span className="unit">.{options.format === 'svg' && options.split ? 'zip' : format.extension}</span>
             </div>
           </div>

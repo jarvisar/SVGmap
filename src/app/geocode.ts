@@ -62,8 +62,8 @@ export async function searchPlaces(query: string, signal?: AbortSignal): Promise
   const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en`;
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`Search failed (${response.status}).`);
-  const data = (await response.json()) as { features: PhotonFeature[] };
-  const places = data.features.map((f, i): Place => {
+  const data = (await response.json()) as { features?: PhotonFeature[] };
+  const places = (data.features ?? []).filter((f) => Array.isArray(f.geometry?.coordinates)).map((f, i): Place => {
     const p = f.properties;
     const detail = [p.city !== p.name ? p.city : undefined, p.state, p.country].filter(Boolean).join(', ');
     return {
