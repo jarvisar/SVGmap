@@ -12,7 +12,7 @@ Visit the [GitHub Pages site](https://svgmap.jarvisar.com/) to access the latest
 
 Search for a place or pick one of the example cities. To map a run or ride, import its GPX file under Routes and the map moves to fit it. Drag the map to move the frame, scroll to zoom and right-drag to rotate. On a phone, pinch to zoom and twist to rotate. The frame shows the whole piece, including the margins, border and title.
 
-Click `Generate` to build the SVG. The preview updates as you change settings. Scroll or pinch to zoom the preview and drag to move it. Double-click it or click `Fit` to see the whole piece again. Click `Download SVG` to save the file, or `Share` to copy a link with your settings.
+Click `Generate` to build the SVG. The preview updates as you change settings. Scroll or pinch to zoom the preview and drag to move it. Double-click it or click `Fit` to see the whole piece again. Click `Download SVG` to save the file, or `Share` to copy a link with your settings. `Export` has the other formats and options. See Export below.
 
 Click the title on the map or in the preview to move it or resize it. See Title Styles below. `Pick roads` in the preview picks out roads for a route of their own colour, or leaves them out. See Picking Roads below.
 
@@ -26,8 +26,8 @@ The settings are:
 * Routes adds runs, rides and other routes from GPX and similar files. See below.
 * Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border and its colours.
 * Output switches between laser, plotter and print.
-* Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline or hatching). The footpath options can skip sidewalks and crossings. See below.
-* Title adds a title and subtitle in one of seven styles. See below. You can load your own font file and set the colour of the lettering and of its lines.
+* Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline, hatching or contours). The footpath options can skip sidewalks and crossings. See below.
+* Title adds a title and subtitle in one of seven styles. See below. You can load your own font file and set the colour of the lettering and of its lines. The subtitle has a colour and style of its own.
 * Pins & text puts your own pins, shapes and text on the map. See below.
 * Line cleanup removes doubled and crowded lines. See below.
 * Map data sets where the map tiles come from, and can add buildings OpenStreetMap is missing. See below.
@@ -42,7 +42,7 @@ When a new version is deployed, a notice asks you to reload. It never reloads on
 
 ## Output Modes
 
-* Laser: filled areas engrave, lines score and the edge cuts. Every layer gets its own colour so it can get its own process. The `LightBurn layer palette` option uses LightBurn's colours so each layer lands on its own LightBurn layer, and `Minimal` gives three processes (engrave, score, cut). `Line width` sets the stroke of every scored line and the cut. Some drivers engrave anything wider than a hairline. Epilog's needs 0.025 mm (0.001 in) or less. The preview can show the piece on birch, walnut, cork, leather, slate or black acrylic, and the `PNG` button saves it that way.
+* Laser: filled areas engrave, lines score and the edge cuts. Every layer gets its own colour so it can get its own process. The `LightBurn layer palette` option uses LightBurn's colours so each layer lands on its own LightBurn layer, and `Minimal` gives three processes (engrave, score, cut). `Line width` sets the stroke of every scored line and the cut. Some drivers engrave anything wider than a hairline. Epilog's needs 0.025 mm (0.001 in) or less. The preview can show the piece on birch, walnut, cork, leather, slate or black acrylic, and a PNG from `Export` saves it that way.
 * Plotter: everything is a stroke. Filled areas are hatched and the strokes are ordered to cut down pen-up travel. Each pen colour becomes a numbered layer (`1 - pen #000000`) that AxiDraw, vpype and saxi can split on. Single-line Hershey fonts are included for titles.
 * Print: coloured themes with wider lines for bigger roads.
 
@@ -64,6 +64,22 @@ Click the box, band, ribbon, badge or legend on the map or in the preview to sel
 
 The box, ribbon and badge can be made solid, which engraves the shape and leaves the letters bare. The presets under Title set the style, fonts and options in one click and keep your title text. Those that use coordinates fill them in when the subtitle is empty.
 
+The subtitle is a layer of its own, so it can be its own colour, process or pen. `Subtitle lettering` under Title sets its colour and whether it's filled, outlined, hatched or contoured. Settings and links from before it had its own keep it the same as the title.
+
+###### Note: Contours draw an area as its outline and then rings following it in, one hatch spacing apart, like a topographic map. They work for layers, lettering, pins and the route band.
+
+## Placeholders
+
+Words in curly brackets are filled in from the map when it's drawn, in the title, the subtitle and the text of pins. `Insert…` under the subtitle and the pin text adds them, and the line under the field shows what they'll say.
+
+* `{coords}` and `{dms}`: the map centre, in decimal degrees or degrees, minutes and seconds. `{lat}` and `{lon}` on their own.
+* `{scale}`: like 1:20,000.
+* `{route}`, `{km}` and `{mi}`: the names and total length of the routes that are showing.
+* `{title}`: the title, for a pin's text.
+* `{date}` and `{year}`: today's.
+
+They follow the map, so `{coords}` changes when the map moves and `{km}` when a route is added. Typed in capitals, like `{ROUTE}`, the value is in capitals too. One with nothing to fill it, like `{km}` without a route, is left out with a warning.
+
 ## Pins & Text
 
 Put your own marks on the map: a pin on home, a heart where you met, a flag at the finish or a line of text. There are 12 shapes (pin, dot, target, heart, star, sparkle, house, flag, cross, arrow, mountain and tree), and each can have up to four lines of text beside it, above it, below it or cut out of it, like a number in a dot.
@@ -71,6 +87,17 @@ Put your own marks on the map: a pin on home, a heart where you met, a flag at t
 Click `Pins & text` above the preview to start. Pick a shape or text from the tools on the left, then click the map to put it down. Drag a mark to move it, a corner to resize it and the round handle to turn it. Hold Shift to keep a move to one direction or turn in 15° steps. With a mark selected, the arrow keys nudge it (Shift for 5 mm), `R` turns it, `[` and `]` resize it, `Delete` removes it and `Ctrl+D` makes a copy. In edit mode `T`, `P`, `H` and `S` pick the text, pin, heart and star tools, and `Esc` backs out one step at a time. Everything can also be done under Pins & text in the sidebar, and marks can be dragged on the map view too.
 
 A mark stays on its spot when the map moves or zooms, or it can be set to stay where it is on the piece instead. Its font and colour follow the title's unless you pick others. The map is left out under it, with a gap around it, like the title. In the file each mark is a layer of its own in its own colour, so it can get its own laser process or pen.
+
+## Export
+
+`Download SVG` saves the SVG in one click. `Export` next to it has the rest:
+
+* SVG, optionally as one file per layer (one per pen in plotter mode) in a zip. Each file is the size of the whole piece, so they line up.
+* DXF, for CAD and laser software that prefers it. R12, in millimetres, one layer per group. DXF has no fills, so filled areas come out as their outlines, which laser software can fill.
+* HPGL (`.plt`), for vinyl cutters and older pen plotters. One pen per colour, listed in the panel, and outlines only.
+* PNG at 150, 300 or 600 DPI, as the preview shows it.
+
+`Mirror it` flips SVG, DXF and HPGL files left to right, for engraving the back of clear acrylic or glass. The preview isn't mirrored. The file name can be changed too.
 
 ## Line Cleanup
 
@@ -152,7 +179,9 @@ Run the tests with `npm test`. The live render test is skipped unless `SVGMAP_NE
 * Map tiles store coordinates to about half a metre. At large scales (under about 1:5000) curves can look slightly angular.
 * The tiles don't mark sidewalks, so they can't be removed by tag without the Overture download. The cleanup removes most of them anyway at smaller scales, because they run next to a road.
 * Skipping sidewalks only helps where they're mapped as separate lines. In a lot of places they aren't, and the download finds nothing: a 1.5 km map of Iztapalapa in Mexico City downloads about 7 MB and has none. Overture's release is also a few weeks older than the tiles, so a sidewalk drawn since then stays.
-* Only SVG export is supported. There is no DXF.
+* DXF layers use AutoCAD's 255 indexed colours. Each colour gets the nearest one not already taken, so two layers never merge, but the colours can look a little different.
+* HPGL and DXF only have outlines and lines. Hatching and contours come through, but solid fills are left for the software to fill.
+* There's no PDF or G-code export.
 * FIT files can't be read. Most apps and watches can export the activity as GPX instead.
 * All imported routes share one colour and style. Road routes each have their own colour.
 * Routes make share links longer. One from a route planner adds well under 1 KB, but a recorded marathon can add up to about 40 KB.

@@ -19,6 +19,7 @@ const material = (result: RenderResult, look: PreviewLook) => (result.mode === '
 const BURN_OPACITY: Partial<Record<GroupElement, number>> = {
   buildings: 0.92,
   text: 0.95,
+  subtitle: 0.95,
   band: 0.95,
   water: 0.7,
   aeroways: 0.6,

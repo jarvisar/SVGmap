@@ -6,18 +6,18 @@ import type { OutputMode, RouteData, RouteDraw } from '../../engine/settings.ts'
 import { Check, ColorInput, Field, NumberField, Section, Select } from '../components/controls.tsx';
 import { ROUTE_ACCEPT, fitMapToRoutes, importRouteFiles, shareOutside, visibleRouteLines } from '../routes.ts';
 import { useApp } from '../store.ts';
-import { HatchOptions } from './LayersPanel.tsx';
+import { HatchOptions, hatchOptionsFor } from './LayersPanel.tsx';
 
 const DRAW_LABELS: Record<OutputMode, Record<RouteDraw, string>> = {
-  laser: { fill: 'Engraved band', outline: 'Outlined band', hatch: 'Hatched band', 'hatch-outline': 'Hatched band + outline', line: 'Scored line' },
-  plotter: { fill: 'Solid band', outline: 'Outlined band', hatch: 'Hatched band', 'hatch-outline': 'Hatched band + outline', line: 'Single line' },
-  print: { line: 'Line', fill: 'Filled band', outline: 'Outlined band', hatch: 'Hatched band', 'hatch-outline': 'Hatched band + outline' },
+  laser: { fill: 'Engraved band', outline: 'Outlined band', hatch: 'Hatched band', 'hatch-outline': 'Hatched band + outline', contour: 'Contoured band', line: 'Scored line' },
+  plotter: { fill: 'Solid band', outline: 'Outlined band', hatch: 'Hatched band', 'hatch-outline': 'Hatched band + outline', contour: 'Contoured band', line: 'Single line' },
+  print: { line: 'Line', fill: 'Filled band', outline: 'Outlined band', hatch: 'Hatched band', 'hatch-outline': 'Hatched band + outline', contour: 'Contoured band' },
 };
 
 const DRAW_ORDER: Record<OutputMode, RouteDraw[]> = {
-  laser: ['fill', 'outline', 'hatch', 'hatch-outline', 'line'],
-  plotter: ['fill', 'outline', 'hatch', 'hatch-outline', 'line'],
-  print: ['line', 'fill', 'outline', 'hatch', 'hatch-outline'],
+  laser: ['fill', 'outline', 'hatch', 'hatch-outline', 'contour', 'line'],
+  plotter: ['fill', 'outline', 'hatch', 'hatch-outline', 'contour', 'line'],
+  print: ['line', 'fill', 'outline', 'hatch', 'hatch-outline', 'contour'],
 };
 
 const DRAW_HINTS: Partial<Record<OutputMode, Partial<Record<RouteDraw, string>>>> = {
@@ -93,7 +93,7 @@ export function RoutesPanel() {
   const count = routes.items.length;
   const draw = style.routeDraw;
   const band = draw !== 'line';
-  const hatched = draw === 'hatch' || draw === 'hatch-outline';
+  const hatched = draw === 'line' ? null : hatchOptionsFor(draw);
   const summary = count === 0 ? 'None' : count === 1 ? routes.items[0].name : `${count} routes`;
 
   return (
@@ -161,7 +161,7 @@ export function RoutesPanel() {
             ) : null}
             <NumberField label="Gap around it" value={routes.gap} {...fieldRange('routes.gap')} step={0.05} unit="mm" onChange={(gap) => setRoutes({ gap })} />
           </div>
-          {hatched ? <HatchOptions layer="route" /> : null}
+          {hatched ? <HatchOptions layer="route" spacingOnly={hatched === 'spacing'} /> : null}
           <Check label="Start and finish markers" checked={routes.markers} onChange={(markers) => setRoutes({ markers })} />
           {routes.markers ? (
             <NumberField label="Marker size" value={routes.markerSize} {...fieldRange('routes.markerSize')} step={0.1} unit="mm" onChange={(markerSize) => setRoutes({ markerSize })} />

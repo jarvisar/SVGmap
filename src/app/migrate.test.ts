@@ -108,3 +108,15 @@ describe('settings from before routes', () => {
     expect(decoded.styles.laser.colors.route).toBe('#000000');
   });
 });
+
+describe('settings saved before the subtitle had its own colour', () => {
+  it('give it the colour and style the title had', () => {
+    const saved = { styles: { laser: { colors: { text: '#A00000' }, fillModes: { text: 'outline' } }, print: { colors: { text: '#EEEEEE', subtitle: '#111111' } } } };
+    const out = migrateSettings(saved, 3) as typeof saved & { styles: { laser: { colors: { subtitle: string }; fillModes: { subtitle: string } } } };
+    expect(out.styles.laser.colors.subtitle).toBe('#A00000');
+    expect(out.styles.laser.fillModes.subtitle).toBe('outline');
+    // Already there, so it's kept.
+    expect(out.styles.print.colors.subtitle).toBe('#111111');
+    expect((migrateSettings(saved, 4) as typeof saved).styles.laser.colors).toEqual({ text: '#A00000' });
+  });
+});

@@ -12,6 +12,7 @@ import type { LonLat } from '../engine/routes/polyline.ts';
 import { decodeRoute, encodeRoute } from '../engine/routes/route.ts';
 import type { RouteData } from '../engine/settings.ts';
 import { loadLabelArtwork } from './map/useLabelArtwork.ts';
+import { placeholdersOf } from './placeholders.ts';
 import { useApp } from './store.ts';
 import { asChange } from './undo.ts';
 
@@ -101,7 +102,9 @@ async function fittedArea(items: readonly RouteData[], rotate: boolean): Promise
     return null;
   }
   // Without the fonts the title's size is unknown, so it's fitted to the whole window.
-  const artwork = (await loadLabelArtwork(layout, s.label).catch(() => null))?.artwork ?? null;
+  // The routes being imported aren't in the store yet, but {route} and {km} need them.
+  const values = placeholdersOf({ ...s, routes: { ...s.routes, items: [...items] } });
+  const artwork = (await loadLabelArtwork(layout, s.label, values).catch(() => null))?.artwork ?? null;
   const { window } = layout;
   const reach = s.routes.markers ? Math.max(s.routes.markerSize * 0.6, s.routes.width / 2) : s.routes.width / 2;
   return fitArea(lines, {

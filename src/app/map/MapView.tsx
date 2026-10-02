@@ -12,6 +12,7 @@ import { LockIcon } from '../components/controls.tsx';
 import { type HandleSpot, type TitleDrag, type TitleGrip, canDrag, dragTitle, droppedLabel, handleAt, resizeCursor, spacedHandles, titleAt, titleHandles } from '../labelDrag.ts';
 import { MARK_REACH_PX, type PlacedMark, markAt } from '../markDrag.ts';
 import { markTransform, selectMark, updateMark, useMarkUi } from '../marks.ts';
+import { usePlaceholderValues } from '../placeholders.ts';
 import { MarkDrawing, MarkFrames } from '../preview/MarkTools.tsx';
 import { routesGeoJson } from '../routes.ts';
 import { scaleOf, useApp } from '../store.ts';
@@ -139,7 +140,8 @@ export function MapView() {
   const [titleSelected, setTitleSelected] = useState(false);
   const [titleHover, setTitleHover] = useState(false);
   const shownLabel = dragged ?? label;
-  const { artwork, error: labelError, layoutWith } = useLabelArtwork(true, layout, shownLabel, customFontId, mapInfo);
+  const values = usePlaceholderValues();
+  const { artwork, error: labelError, layoutWith } = useLabelArtwork(true, layout, shownLabel, customFontId, values, mapInfo);
   // Handles only on a title big enough on screen to grab them apart from it.
   const handles = useMemo(() => {
     if (!titleSelected || !artwork || !layout || !frame) return [];
@@ -150,7 +152,7 @@ export function MapView() {
   // them is left to the preview and the sidebar.
   const marks = useApp((s) => s.marks);
   const selectedMark = useMarkUi((s) => s.selected);
-  const liveMarks = useMarkArtworks(marks, label.font, customFontId);
+  const liveMarks = useMarkArtworks(marks, label.font, customFontId, values);
   const [markDragged, setMarkDragged] = useState<MapMark | null>(null);
   const [markHover, setMarkHover] = useState<string | null>(null);
   const placedMarks: PlacedMark[] = useMemo(() => {

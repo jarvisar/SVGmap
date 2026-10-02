@@ -26,6 +26,8 @@ export interface LabelArtwork {
   // and left out everywhere else.
   keep: Path[] | null;
   text: TextGeometry;
+  // The subtitle's letters, kept apart so they can be a layer of their own.
+  subtitle: TextGeometry;
   // Engraved areas drawn with the lettering, like a ribbon's folds or the
   // scale bar. With reversed set, the lettering is cut out of them instead.
   solid: Path[];
@@ -53,6 +55,7 @@ export function artwork(parts: Partial<LabelArtwork> & Pick<LabelArtwork, 'knock
     clearGap: 0,
     keep: null,
     text: NO_TEXT,
+    subtitle: NO_TEXT,
     solid: [],
     reversed: false,
     frame: [],
@@ -71,6 +74,9 @@ export function place(g: TextGeometry, transform: (p: Point) => Point): TextGeom
     strokes: g.strokes.map((s) => s.map(transform)),
   };
 }
+
+/** The title's letters and the subtitle's together, for sizing them up. */
+export const allLettering = (a: LabelArtwork): TextGeometry => mergeGeometry(a.text, a.subtitle);
 
 export function mergeGeometry(a: TextGeometry, b: TextGeometry | null): TextGeometry {
   if (!b) return a;

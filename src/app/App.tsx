@@ -3,7 +3,9 @@ import { useShallow } from 'zustand/react/shallow';
 import { toSvg } from '../engine/svg/writer.ts';
 import { CUSTOM_FONT_ID } from '../engine/text/fonts.ts';
 import { DEFAULT_LABEL } from '../engine/text/label.ts';
+import { ExportMenu } from './components/ExportMenu.tsx';
 import { getCustomFont, loadStoredFont } from './customFont.ts';
+import { defaultFileName, download } from './files.ts';
 import { flash, useFlash } from './flash.ts';
 import { MapView } from './map/MapView.tsx';
 import { CleanupPanel } from './panels/CleanupPanel.tsx';
@@ -16,33 +18,12 @@ import { RoutesPanel } from './panels/RoutesPanel.tsx';
 import { SizePanel } from './panels/SizePanel.tsx';
 import { TitlePanel } from './panels/TitlePanel.tsx';
 import { Preview } from './preview/Preview.tsx';
-import { toPng } from './preview/png.ts';
 import { renderFraction, requestRender, settingsKey, useRender } from './render.ts';
 import { importRouteFiles, useImportNotice } from './routes.ts';
 import { toRenderSettings } from './settings.ts';
 import { settingsFromUrl, shareUrl } from './share.ts';
 import { selectSettings, useApp } from './store.ts';
 import { asChange, quietly, redoChange, startUndo, undoChange, useUndoLabels } from './undo.ts';
-
-function slug(text: string) {
-  return (
-    text
-      .normalize('NFKD')
-      .replace(/\p{M}/gu, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'map'
-  );
-}
-
-function download(name: string, content: Blob) {
-  const url = URL.createObjectURL(content);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 function openSharedLink() {
   const shared = settingsFromUrl();
@@ -175,7 +156,6 @@ export function App() {
   const renderedKey = useRender((s) => s.renderedKey);
   const [menuOpen, setMenuOpen] = useState(false);
   const flashText = useFlash((s) => s.text);
-  const [savingPng, setSavingPng] = useState(false);
   const [dropping, setDropping] = useState(false);
   const dropTimer = useRef(0);
 
@@ -219,20 +199,9 @@ export function App() {
   };
 
   const save = () => {
-    if (result) download(`${slug(result.meta.title)}-${result.mode}.svg`, new Blob([toSvg(result)], { type: 'image/svg+xml' }));
+    if (result) download(`${defaultFileName(result)}.svg`, new Blob([toSvg(result)], { type: 'image/svg+xml' }));
   };
-
-  const savePng = async () => {
-    if (!result) return;
-    setSavingPng(true);
-    try {
-      download(`${slug(result.meta.title)}-${result.mode}.png`, await toPng(result, useApp.getState().previewLook));
-    } catch (error) {
-      flash(error instanceof Error ? error.message : 'Could not save the PNG');
-    } finally {
-      setSavingPng(false);
-    }
-  };
+  const ready = Boolean(result) && status === 'done' && key === renderedKey;
 
   let statusText = flashText;
   let barWidth = 0;
@@ -287,21 +256,13 @@ export function App() {
           </button>
         ) : (
           <>
-            <button
-              type="button"
-              className="btn"
-              title="Save a 300 DPI image of the preview"
-              onClick={() => void savePng()}
-              disabled={!result || status !== 'done' || key !== renderedKey || savingPng}
-            >
-              PNG
-            </button>
+            <ExportMenu result={result} ready={ready} />
             <button
               type="button"
               className="btn btn-primary"
               aria-label="Download SVG"
               onClick={save}
-              disabled={!result || status !== 'done' || key !== renderedKey}
+              disabled={!ready}
             >
               <span className="wide-only">Download</span> SVG
             </button>

@@ -32,20 +32,21 @@ export const LAYER_NAMES: Record<LayerId, string> = {
   raceways: 'Racetracks',
 };
 
-export type FillMode = 'fill' | 'outline' | 'hatch' | 'hatch-outline';
+// 'contour' is rings following the edge in, one hatch spacing apart.
+export type FillMode = 'fill' | 'outline' | 'hatch' | 'hatch-outline' | 'contour';
 
 // Pins and text share one hatch, set per mode like the layers'.
 export type HatchKey = FillLayerId | 'text' | 'route' | 'marks';
 
-export type ElementId = LayerId | 'route' | 'text' | 'frame' | 'border' | 'band' | 'cut';
+export type ElementId = LayerId | 'route' | 'text' | 'subtitle' | 'frame' | 'border' | 'band' | 'cut';
 
 // 'line' is a single stroke along the route. The rest draw a band, like a filled area.
 export type RouteDraw = 'line' | FillMode;
-export const ROUTE_DRAWS: RouteDraw[] = ['line', 'fill', 'outline', 'hatch', 'hatch-outline'];
+export const ROUTE_DRAWS: RouteDraw[] = ['line', 'fill', 'outline', 'hatch', 'hatch-outline', 'contour'];
 
 export interface ModeStyle {
   colors: Record<ElementId, string>;
-  fillModes: Record<FillLayerId | 'text', FillMode>;
+  fillModes: Record<FillLayerId | 'text' | 'subtitle', FillMode>;
   hatch: Record<HatchKey, HatchSettings>;
   routeDraw: RouteDraw;
   // Only used by print. Lasers get a hairline and plotters the pen width.
@@ -194,6 +195,7 @@ const LASER_COLORS: Record<ElementId, string> = {
   raceways: '#E7298A',
   route: '#6200EA',
   text: '#000000',
+  subtitle: '#4D4D4D',
   frame: '#CC79A7',
   border: '#B8860B',
   band: '#8B6914',
@@ -213,6 +215,7 @@ export const LIGHTBURN_COLORS: Record<ElementId, string> = {
   rocks: '#B4B4B4',
   band: '#0000A0',
   text: '#A00000',
+  subtitle: '#7D87B9',
   border: '#00A000',
   frame: '#A0A000',
   railways: '#C08000',
@@ -232,6 +235,7 @@ export const MINIMAL_COLORS: Record<ElementId, string> = {
   decks: '#000000',
   buildings: '#000000',
   text: '#000000',
+  subtitle: '#000000',
   band: '#000000',
   waterways: '#0000FF',
   railways: '#0000FF',
@@ -251,7 +255,7 @@ export const LASER_PALETTES = {
   minimal: { name: 'Minimal: engrave / score / cut', colors: MINIMAL_COLORS },
 } as const;
 
-const fillModes = (mode: FillMode): Record<FillLayerId | 'text', FillMode> => ({
+const fillModes = (mode: FillMode): Record<FillLayerId | 'text' | 'subtitle', FillMode> => ({
   water: mode,
   greens: mode,
   sand: mode,
@@ -260,6 +264,7 @@ const fillModes = (mode: FillMode): Record<FillLayerId | 'text', FillMode> => ({
   decks: mode,
   buildings: mode,
   text: mode,
+  subtitle: mode,
 });
 
 const lineWidths = (w: number): Record<LineLayerId, number> => ({
@@ -317,12 +322,13 @@ export const PLOTTER_STYLE: ModeStyle = {
     raceways: '#C2185B',
     route: '#D32F2F',
     text: '#000000',
+    subtitle: '#000000',
     frame: '#000000',
     border: '#000000',
     band: '#000000',
     cut: '#FF0000',
   },
-  fillModes: { ...fillModes('hatch'), buildings: 'hatch-outline', text: 'hatch-outline', decks: 'outline' },
+  fillModes: { ...fillModes('hatch'), buildings: 'hatch-outline', text: 'hatch-outline', subtitle: 'hatch-outline', decks: 'outline' },
   hatch: DEFAULT_HATCH,
   // Drawn as pen passes along the route, not hatched.
   routeDraw: 'fill',
@@ -360,6 +366,7 @@ const theme = (
     raceways: c.raceways ?? c.ink,
     route: c.route,
     text: c.text ?? c.ink,
+    subtitle: c.subtitle ?? c.text ?? c.ink,
     frame: c.frame ?? c.ink,
     border: c.border ?? c.ink,
     band: c.band ?? c.ink,

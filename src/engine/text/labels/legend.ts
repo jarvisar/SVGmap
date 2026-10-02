@@ -102,10 +102,11 @@ export function layoutLegendLabel(
   let y = top + border + padY;
 
   let lettering = moved(titleRow.g, x0, y);
+  let subLettering: TextGeometry = NO_TEXT;
   y += T;
   if (subRow) {
     y += gapSub;
-    lettering = mergeGeometry(lettering, moved(subRow.g, x0, y));
+    subLettering = moved(subRow.g, x0, y);
     y += S;
   }
   const frame: Path[] = [];
@@ -209,6 +210,7 @@ export function layoutLegendLabel(
     knockout: [left, top, boxW, boxH],
     clear: [rect(left, top, boxW, boxH)],
     text: lettering,
+    subtitle: subLettering,
     solid,
     frame,
     frameWidth: lineWidth,

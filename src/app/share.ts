@@ -1,6 +1,6 @@
 // Share links hold the settings that differ from the defaults, as base64url JSON
 // in the URL hash.
-import { type Settings, defaultSettings, fillRouteColours, isObject, mergeSettings, packPicks, unpackPicks } from './settings.ts';
+import { type Settings, defaultSettings, fillRouteColours, isObject, mergeSettings, packPicks, subtitleLikeTitle, unpackPicks } from './settings.ts';
 
 function diff(current: unknown, base: unknown): unknown {
   if (isObject(current) && isObject(base)) {
@@ -30,7 +30,9 @@ function fromBase64Url(value: string): string {
 // from their own palette in fillRouteColours. Newer links leave it out only
 // when it's the default, and filling it in would change a colour the user
 // picked to match the default palette's.
-const SHARE_VERSION = 2;
+// Version 3 gave the subtitle a colour and style of its own. Older links get
+// the title's, as they were drawn when the link was made.
+const SHARE_VERSION = 3;
 
 export function encodeSettings(settings: Settings): string {
   const changed = diff(packPicks(settings), packPicks(defaultSettings())) ?? {};
@@ -41,8 +43,9 @@ export function encodeSettings(settings: Settings): string {
 export function decodeSettings(encoded: string): Settings | null {
   try {
     const json: unknown = JSON.parse(fromBase64Url(encoded));
-    const current = isObject(json) && typeof json.v === 'number' && json.v >= SHARE_VERSION;
-    return mergeSettings(defaultSettings(), unpackPicks(current ? json : fillRouteColours(json)));
+    const v = isObject(json) && typeof json.v === 'number' ? json.v : 0;
+    const merged = mergeSettings(defaultSettings(), unpackPicks(v >= 2 ? json : fillRouteColours(json)));
+    return v >= 3 ? merged : (subtitleLikeTitle(merged, true) as Settings);
   } catch {
     return null;
   }

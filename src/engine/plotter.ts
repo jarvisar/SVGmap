@@ -1,4 +1,4 @@
-import { type Paths64, EndType, JoinType, inflatePaths } from 'clipper2-ts';
+import { type Paths64, EndType, JoinType, getBoundsPaths, inflatePaths, simplifyPaths } from 'clipper2-ts';
 import { SCALE } from './fills.ts';
 import type { Path, Point } from './lines/geometry.ts';
 
@@ -103,6 +103,28 @@ export function contourFill(paths: Paths64, pen: number): Path[] {
   }
   // Narrower than the pen, so the outline is as close as it gets.
   return out.length > 0 ? out : outlines(paths);
+}
+
+// The 'contour' fill: the outline, then rings following it in, spacing
+// apart, like the lines on a topographic map. Each ring is inset from the
+// last, which keeps the passes cheap on big areas.
+export function contourLines(paths: Paths64, spacing: number): Path[] {
+  const step = Math.max(spacing, MIN_HATCH_SPACING) * SCALE;
+  // Every inset adds points around the rounded corners, and without the
+  // simplify they piled up to thousands a ring, and a 600 mm piece of
+  // harbour at 0.1 mm ran out of memory. Points within 2 microns of the line go.
+  const inset = (rings: Paths64) => simplifyPaths(inflatePaths(rings, -step, JoinType.Round, EndType.Polygon, 2, Math.max(1, step * 0.01)), 2, true);
+  // Enough passes to reach the middle of anything this size, so a big area
+  // at a fine spacing isn't left with a bare centre.
+  const b = getBoundsPaths(paths);
+  const passes = Math.ceil(Math.min(b.right - b.left, b.bottom - b.top) / 2 / step) + 1;
+  const out: Path[] = outlines(paths);
+  let rings = inset(paths);
+  for (let pass = 0; rings.length > 0 && pass < passes; pass++) {
+    for (const line of outlines(rings)) out.push(line);
+    rings = inset(rings);
+  }
+  return out;
 }
 
 export interface OrderResult {

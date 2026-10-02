@@ -11,6 +11,7 @@ import { useLabelArtwork } from '../map/useLabelArtwork.ts';
 import { useMarkArtworks } from '../map/useMarkArtwork.ts';
 import { MARK_REACH_PX, type MarkDrag, type MarkGrip, type PlacedMark, cornerCursor, dragMark, markAt, handleAt as markHandleAt, markHandles, scaleMark } from '../markDrag.ts';
 import { addMark, duplicateMark, markTransform, nudgeMark, removeMark, selectMark, setEditing, setTool, startingMark, updateMark, useMarkUi } from '../marks.ts';
+import { usePlaceholderValues } from '../placeholders.ts';
 import { useRender } from '../render.ts';
 import { type PreviewLook, useApp } from '../store.ts';
 import { MarkCard, MarkDrawing, MarkFrames, MarkPalette, TOOL_KEYS } from './MarkTools.tsx';
@@ -36,7 +37,7 @@ const HANDLE_REACH = COARSE ? 16 : 9;
 // How far a press on the title moves before it drags it.
 const DRAG_START_PX = 4;
 
-const isTitle = (element: string) => element === 'text' || element === 'frame';
+const isTitle = (element: string) => element === 'text' || element === 'subtitle' || element === 'frame';
 
 // hideTitle leaves the title out while a moved one is drawn over the result,
 // and hideMarks the pins and text while they're drawn from the settings.
@@ -128,7 +129,8 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   const [dragged, setDragged] = useState<LabelSettings | null>(null);
   const shown = dragged ?? label;
   const draggable = canDrag(label.style);
-  const title = useLabelArtwork(Boolean(result) && draggable, layout, shown, customFontId, mapInfo);
+  const values = usePlaceholderValues();
+  const title = useLabelArtwork(Boolean(result) && draggable, layout, shown, customFontId, values, mapInfo);
   const titleGrab = useRef<{ pointerId: number; start: Point; moved: boolean; drag: TitleDrag; to: LabelSettings | null; cursor: string } | null>(null);
   const [titleSelected, setTitleSelected] = useState(false);
   const [hoverTitle, setHoverTitle] = useState(false);
@@ -147,7 +149,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   const area = useApp((s) => s.area);
   const styles = useApp((s) => s.styles);
   const { editing, tool, selected: selectedMarkId, fresh } = useMarkUi();
-  const liveMarks = useMarkArtworks(marks, label.font, customFontId);
+  const liveMarks = useMarkArtworks(marks, label.font, customFontId, values);
   const [markDragged, setMarkDragged] = useState<MapMark | null>(null);
   const [hoverMark, setHoverMark] = useState<string | null>(null);
   const markGrab = useRef<{ pointerId: number; start: Point; moved: boolean; drag: MarkDrag; to: MapMark | null; cursor: string } | null>(null);

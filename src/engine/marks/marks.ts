@@ -17,7 +17,7 @@ export type { MarkShape };
 
 export type MarkSide = 'right' | 'left' | 'above' | 'below' | 'inside';
 export type MarkAnchor = 'map' | 'page';
-export type MarkFill = 'fill' | 'outline' | 'hatch' | 'hatch-outline';
+export type MarkFill = 'fill' | 'outline' | 'hatch' | 'hatch-outline' | 'contour';
 
 export interface MapMark {
   id: string;
@@ -63,7 +63,7 @@ export const MARK_RANGES = {
 
 export const MARK_SIDES: MarkSide[] = ['right', 'left', 'above', 'below', 'inside'];
 const ANCHORS: MarkAnchor[] = ['map', 'page'];
-const FILLS: MarkFill[] = ['fill', 'outline', 'hatch', 'hatch-outline'];
+const FILLS: MarkFill[] = ['fill', 'outline', 'hatch', 'hatch-outline', 'contour'];
 const HEX = /^#[0-9a-f]{6}$/i;
 const ID = /^[a-z0-9]{1,24}$/i;
 

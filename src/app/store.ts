@@ -32,6 +32,20 @@ import {
 } from './settings.ts';
 
 export type View = 'map' | 'preview';
+
+export type ExportFormat = 'svg' | 'dxf' | 'hpgl' | 'png';
+export const EXPORT_FORMATS: ExportFormat[] = ['svg', 'dxf', 'hpgl', 'png'];
+export const PNG_DPIS = [150, 300, 600];
+
+// How files are saved. Kept with the settings, but not in links or undo.
+export interface ExportOptions {
+  format: ExportFormat;
+  // Left to right, for engraving the back of clear acrylic or glass.
+  mirror: boolean;
+  // One SVG per layer or pen, in a zip.
+  split: boolean;
+  pngDpi: number;
+}
 // A material for the laser preview, or the file's own colours.
 export type PreviewLook = MaterialId | 'colors';
 
@@ -85,6 +99,8 @@ export interface AppState extends Settings, Actions {
   setView: (view: View) => void;
   previewLook: PreviewLook;
   setPreviewLook: (look: PreviewLook) => void;
+  exportOptions: ExportOptions;
+  setExportOptions: (patch: Partial<ExportOptions>) => void;
   customFontName: string | null;
   // Fingerprint of the loaded font, so a new version with the same name still re-renders.
   customFontId: string | null;
@@ -127,6 +143,8 @@ export const useApp = create<AppState>()(
       setView: (view) => set({ view }),
       previewLook: 'birch',
       setPreviewLook: (previewLook) => set({ previewLook }),
+      exportOptions: { format: 'svg', mirror: false, split: false, pngDpi: 300 },
+      setExportOptions: (patch) => set((s) => ({ exportOptions: { ...s.exportOptions, ...patch } })),
       customFontName: null,
       customFontId: null,
       setCustomFont: (font) => set({ customFontName: font?.name ?? null, customFontId: font ? fontFingerprint(font.data) : null }),
@@ -230,7 +248,7 @@ export const useApp = create<AppState>()(
     {
       name: 'svgmap-settings',
       storage: settingsStorage,
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => migrateSettings(persisted, version) as AppState,
       partialize: (s) => {
         const { view: _view, ...rest } = s;

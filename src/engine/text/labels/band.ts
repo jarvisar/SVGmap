@@ -9,7 +9,7 @@ import type { LabelSettings } from '../label.ts';
 import { rowsSpan } from '../place.ts';
 import { type LabelArtwork, LabelError, NO_TEXT, artwork, diamond, mergeGeometry, moved, rect, scaled, sized } from './common.ts';
 
-type Row = { kind: 'text'; g: TextGeometry; w: number; h: number } | { kind: 'ornament'; w: number; h: number };
+type Row = { kind: 'text'; g: TextGeometry; w: number; h: number; subtitle?: boolean } | { kind: 'ornament'; w: number; h: number };
 
 // Rows the fit tries. A 20 mm band gets them 0.1 mm apart.
 const BAND_ROWS = 200;
@@ -38,7 +38,7 @@ export function layoutBandLabel(layout: Layout, s: LabelSettings, title: TextGeo
     const h = titleRow.h * 0.2;
     rows.push({ kind: 'ornament', w: Math.max(h * 8, titleRow.w * 0.34), h });
   }
-  if (subtitle) rows.push({ kind: 'text', ...sized(subtitle, s.subtitleHeight * k) });
+  if (subtitle) rows.push({ kind: 'text', ...sized(subtitle, s.subtitleHeight * k), subtitle: true });
   // Everything scales with the fit, the gaps between rows too.
   const gap = rows.length > 1 ? s.subtitleGap * k : 0;
   const naturalH = rows.reduce((sum, r) => sum + r.h, 0) + gap * (rows.length - 1);
@@ -147,6 +147,7 @@ export function layoutBandLabel(layout: Layout, s: LabelSettings, title: TextGeo
   }
 
   let lettering: TextGeometry = NO_TEXT;
+  let subLettering: TextGeometry = NO_TEXT;
   const frame: Path[] = [];
   const solid: Path[] = [];
   let cursor = y;
@@ -155,7 +156,9 @@ export function layoutBandLabel(layout: Layout, s: LabelSettings, title: TextGeo
     const h = row.h * fit;
     const rx = x + align * (w - rw);
     if (row.kind === 'text') {
-      lettering = mergeGeometry(lettering, moved(scaled(row.g, fit), rx, cursor));
+      const g = moved(scaled(row.g, fit), rx, cursor);
+      if (row.subtitle) subLettering = mergeGeometry(subLettering, g);
+      else lettering = mergeGeometry(lettering, g);
     } else {
       const cx = rx + rw / 2;
       const cy = cursor + h / 2;
@@ -191,6 +194,7 @@ export function layoutBandLabel(layout: Layout, s: LabelSettings, title: TextGeo
     knockout,
     clear: [rect(...knockout)],
     text: lettering,
+    subtitle: subLettering,
     solid,
     frame,
     frameWidth: s.dividerWidth,

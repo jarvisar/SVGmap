@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { toPath64 } from './fills.ts';
 import type { Path } from './lines/geometry.ts';
-import { hatch, orderForPlotting, outlines } from './plotter.ts';
+import { contourLines, hatch, orderForPlotting, outlines } from './plotter.ts';
 
 const square = toPath64([
   [0, 0],
@@ -37,6 +37,27 @@ describe('hatching', () => {
     for (const [a, b] of hatch([square], 1, 45)) {
       expect(Math.abs(Math.abs(b[0] - a[0]) - Math.abs(b[1] - a[1]))).toBeLessThan(1e-6);
     }
+  });
+});
+
+describe('contours', () => {
+  it('reach the middle of a big area without piling up points', () => {
+    // 300 mm with a notch, whose inside corners get rounded on every pass.
+    const notched = toPath64([
+      [0, 0],
+      [300, 0],
+      [300, 300],
+      [160, 300],
+      [160, 280],
+      [140, 280],
+      [140, 300],
+      [0, 300],
+    ]);
+    const rings = contourLines([notched], 0.1);
+    // About 140 mm in at 0.1 mm a ring, more than the 1000 passes it used to stop at.
+    expect(rings.length).toBeGreaterThan(1300);
+    const points = rings.reduce((sum, r) => sum + r.length, 0);
+    expect(points / rings.length).toBeLessThan(100);
   });
 });
 

@@ -29,8 +29,9 @@ export function TitleOverlay(props: { artwork: LabelArtwork; windowD: string }) 
   const { artwork, windowD } = props;
   const rings = (paths: readonly (readonly [number, number])[][]) => paths.map((r) => polylineD(r, true)).join('');
   const lines = (paths: readonly (readonly [number, number])[][]) => paths.map((p) => polylineD(p)).join('');
-  const letters = rings(artwork.text.rings);
-  const strokes = lines(artwork.text.strokes);
+  // The subtitle is a layer of its own in the file, but here it's all one ink.
+  const letters = rings([...artwork.text.rings, ...artwork.subtitle.rings]);
+  const strokes = lines([...artwork.text.strokes, ...artwork.subtitle.strokes]);
   const solid = rings(artwork.solid);
   const gap = artwork.clearGap;
   return (

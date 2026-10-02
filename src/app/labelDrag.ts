@@ -10,6 +10,7 @@
 import type { Layout } from '../engine/layout/layout.ts';
 import { fieldRange } from '../engine/limits.ts';
 import type { LabelArtwork, LabelSettings, LabelStyle } from '../engine/text/label.ts';
+import { allLettering } from '../engine/text/labels/common.ts';
 import { geometryBounds } from '../engine/text/outline.ts';
 
 type Point = [number, number];
@@ -82,7 +83,7 @@ export function titleHandles(layout: Layout, label: LabelSettings, artwork: Labe
   }
   if (label.style !== 'band') return [];
   const spots: HandleSpot[] = [{ id: 'band', x: x + w / 2, y: bandOf(layout, label).divider, dx: 0, dy: 1, label: 'Resize the band' }];
-  const b = label.autofit ? null : geometryBounds(artwork.text);
+  const b = label.autofit ? null : geometryBounds(allLettering(artwork));
   if (b) {
     for (const [id, fx, fy, name] of TEXT_CORNERS) {
       spots.push({ id, x: fx ? b[2] : b[0], y: fy ? b[3] : b[1], dx: fx - 0.5, dy: fy - 0.5, label: `Resize the text from its ${name} corner` });
@@ -179,7 +180,7 @@ export function dragTitle(
   // when it was shrunk to fit.
   const scaled = (factor: number) => clamp(Math.round(label.size * artwork.scale * factor), SIZE);
   if (grip === 'text-nw' || grip === 'text-ne' || grip === 'text-se' || grip === 'text-sw') {
-    const b = geometryBounds(artwork.text);
+    const b = geometryBounds(allLettering(artwork));
     if (!b) return label;
     const corner: Point = [grip.endsWith('w') ? b[0] : b[2], grip.startsWith('text-n') ? b[1] : b[3]];
     return { ...label, size: scaled(stretch([(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], corner, dx, dy)) };

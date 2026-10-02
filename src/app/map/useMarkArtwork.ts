@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { type MapMark, type MarkArtwork, hasText, layoutMark, markFont } from '../../engine/marks/marks.ts';
 import type { LoadedFont } from '../../engine/text/outline.ts';
+import { type PlaceholderValues, fillPlaceholders } from '../../engine/text/placeholders.ts';
 import { getCustomFont } from '../customFont.ts';
 import { fontLoader } from './useLabelArtwork.ts';
 
@@ -10,14 +11,16 @@ export interface LiveMarks {
   layoutWith: (mark: MapMark) => MarkArtwork;
 }
 
-// Laid out again only when the mark or its font changes, not when the map moves.
-const laidOut = new WeakMap<MapMark, { font: LoadedFont | null; art: MarkArtwork }>();
+// Laid out again only when the mark, its font or its filled-in text changes,
+// not every time the map moves.
+const laidOut = new WeakMap<MapMark, { font: LoadedFont | null; text: string; art: MarkArtwork }>();
 
-function layoutCached(mark: MapMark, font: LoadedFont | null): MarkArtwork {
+function layoutCached(mark: MapMark, font: LoadedFont | null, values: PlaceholderValues): MarkArtwork {
+  const text = fillPlaceholders(mark.text, values);
   const hit = laidOut.get(mark);
-  if (hit && hit.font === font) return hit.art;
-  const art = layoutMark(mark, font);
-  laidOut.set(mark, { font, art });
+  if (hit && hit.font === font && hit.text === text) return hit.art;
+  const art = layoutMark(text === mark.text ? mark : { ...mark, text }, font);
+  laidOut.set(mark, { font, text, art });
   return art;
 }
 
@@ -25,7 +28,7 @@ function layoutCached(mark: MapMark, font: LoadedFont | null): MarkArtwork {
  * The marks laid out on the main thread, for the map view and for dragging
  * them in the preview. Text shows once its font is in, shapes straight away.
  */
-export function useMarkArtworks(marks: MapMark[], titleFont: string, customFontId: string | null): LiveMarks {
+export function useMarkArtworks(marks: MapMark[], titleFont: string, customFontId: string | null, values: PlaceholderValues): LiveMarks {
   const wanted = useMemo(() => [...new Set(marks.filter(hasText).map((m) => markFont(m, titleFont)))].sort(), [marks, titleFont]);
   const key = `${wanted.join('|')}|${customFontId ?? ''}`;
   const [fonts, setFonts] = useState<ReadonlyMap<string, LoadedFont>>(new Map());
@@ -55,7 +58,10 @@ export function useMarkArtworks(marks: MapMark[], titleFont: string, customFontI
     // The key covers the fonts and the loaded file.
   }, [key]);
 
-  const layoutWith = useCallback((mark: MapMark) => layoutCached(mark, hasText(mark) ? (fonts.get(markFont(mark, titleFont)) ?? null) : null), [fonts, titleFont]);
+  const layoutWith = useCallback(
+    (mark: MapMark) => layoutCached(mark, hasText(mark) ? (fonts.get(markFont(mark, titleFont)) ?? null) : null, values),
+    [fonts, titleFont, values],
+  );
   const arts = useMemo(() => new Map(marks.map((m) => [m.id, layoutWith(m)])), [marks, layoutWith]);
   return { arts, layoutWith };
 }

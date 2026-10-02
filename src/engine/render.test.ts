@@ -115,8 +115,21 @@ describe('rendering a real tile', () => {
     const defaults = defaultRenderSettings('laser');
     const { result } = render('laser', { label: { ...defaults.label, style: 'band', subtitle: '49.2826° N' } }, { title: montserrat, subtitle: font });
     const ids = result.groups.map((g) => g.id);
-    expect(ids).toEqual(expect.arrayContaining(['text', 'text-lines']));
+    expect(ids).toEqual(expect.arrayContaining(['text', 'subtitle']));
+    expect(result.groups.find((g) => g.id === 'subtitle')).toMatchObject({ label: 'Subtitle', kind: 'stroke', color: defaults.style.colors.subtitle });
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('draws areas as contours, outline first and rings a spacing apart', () => {
+    const laser = defaultRenderSettings('laser');
+    const style = (mode: 'outline' | 'contour') => ({ ...laser.style, fillModes: { ...laser.style.fillModes, water: mode } });
+    const water = (mode: 'outline' | 'contour') => render('laser', { style: style(mode) }).result.groups.find((g) => g.id === 'water')!;
+    const outline = water('outline');
+    const contour = water('contour');
+    expect(contour.kind).toBe('stroke');
+    // The harbour is wide, so it takes a lot of rings 0.8 mm apart.
+    expect(contour.subpaths).toBeGreaterThan(outline.subpaths * 5);
+    expect(contour.lengthMm).toBeGreaterThan(outline.lengthMm * 5);
   });
 
   it('finishes with a pen width of zero', () => {

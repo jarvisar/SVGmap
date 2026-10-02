@@ -25,6 +25,7 @@ export function MarksPanel() {
   const mode = useApp((s) => s.mode);
   const selected = useMarkUi((s) => s.selected);
   const hatched = marks.some((m) => m.fill === 'hatch' || m.fill === 'hatch-outline' || (mode === 'plotter' && m.fill === 'fill'));
+  const contoured = marks.some((m) => m.fill === 'contour');
   const summary = marks.length === 0 ? 'None' : marks.length === 1 ? markName(marks[0]) : `${marks.length} on the map`;
   return (
     <Section title="Pins & text" summary={summary}>
@@ -73,10 +74,10 @@ export function MarksPanel() {
           })}
         </ul>
       ) : null}
-      {hatched ? (
+      {hatched || contoured ? (
         <>
-          <div className="subhead">Hatching</div>
-          <HatchOptions layer="marks" />
+          <div className="subhead">{hatched ? 'Hatching' : 'Contours'}</div>
+          <HatchOptions layer="marks" spacingOnly={!hatched} />
         </>
       ) : null}
     </Section>

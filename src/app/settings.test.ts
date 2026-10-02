@@ -91,6 +91,12 @@ describe('settings', () => {
     expect(mergeSettings(base, { previewLook: 'toString' }).previewLook).toBe('birch');
   });
 
+  it('only keeps export options it knows', () => {
+    const base = useApp.getState();
+    expect(mergeSettings(base, { exportOptions: { format: 'dxf', pngDpi: 600, mirror: true } }).exportOptions).toEqual({ format: 'dxf', mirror: true, split: false, pngDpi: 600 });
+    expect(mergeSettings(base, { exportOptions: { format: 'pdf', pngDpi: 1200 } }).exportOptions).toEqual(base.exportOptions);
+  });
+
   it('keeps a transparent background', () => {
     const merged = mergeSettings(defaultSettings(), { styles: { print: { background: null } } });
     expect(merged.styles.print.background).toBeNull();
@@ -186,9 +192,22 @@ describe('share links', () => {
     const settings = defaultSettings();
     settings.label.text = 'ROME';
     const decode = (encoded: string) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))));
-    expect(decode(encodeSettings(settings))).toEqual({ v: 2, label: { text: 'ROME' } });
+    expect(decode(encodeSettings(settings))).toEqual({ v: 3, label: { text: 'ROME' } });
     settings.source = { ...settings.source, overtureBuildings: true };
-    expect(decode(encodeSettings(settings))).toEqual({ v: 2, label: { text: 'ROME' }, source: { overtureBuildings: true } });
+    expect(decode(encodeSettings(settings))).toEqual({ v: 3, label: { text: 'ROME' }, source: { overtureBuildings: true } });
+  });
+
+  it('from before the subtitle had its own colour keep it the same as the title', () => {
+    const encode = (json: object) => btoa(JSON.stringify(json)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const old = decodeSettings(encode({ v: 2, styles: { laser: { colors: { text: '#123456' } } } }))!;
+    expect(old.styles.laser.colors.subtitle).toBe('#123456');
+    expect(old.styles.print.colors.subtitle).toBe(old.styles.print.colors.text);
+    expect(old.styles.plotter.fillModes.subtitle).toBe(old.styles.plotter.fillModes.text);
+    // Made since, a link keeps what it says.
+    const settings = defaultSettings();
+    settings.styles.laser.colors.subtitle = '#ABCDEF';
+    expect(decodeSettings(encodeSettings(settings))!.styles.laser.colors.subtitle).toBe('#ABCDEF');
+    expect(decodeSettings(encodeSettings(defaultSettings()))!.styles.laser.colors.subtitle).toBe(defaultSettings().styles.laser.colors.subtitle);
   });
 
   it('keep a route colour that matches the default palette', () => {

@@ -4,6 +4,7 @@ import type { Layout } from '../../engine/layout/layout.ts';
 import { shapePathD } from '../../engine/layout/shapes.ts';
 import type { RenderResult } from '../../engine/result.ts';
 import { fmt, polylineD } from '../../engine/svg/format.ts';
+import { allLettering } from '../../engine/text/labels/common.ts';
 import type { LabelArtwork, LabelSettings } from '../../engine/text/label.ts';
 import { geometryBounds } from '../../engine/text/outline.ts';
 import { Check } from '../components/controls.tsx';
@@ -24,8 +25,11 @@ export function TitleGhost(props: { artwork: LabelArtwork; result: RenderResult;
   const text = previewInk(result, look, 'text');
   const letters = rings(artwork.text.rings);
   const strokes = lines(artwork.text.strokes);
+  const subLetters = rings(artwork.subtitle.rings);
+  const subStrokes = lines(artwork.subtitle.strokes);
   const solid = rings(artwork.solid);
   const bare = artwork.reversed && solid ? background : text;
+  const subBare = artwork.reversed && solid ? background : previewInk(result, look, 'subtitle');
   return (
     <g pointerEvents="none">
       <clipPath id="preview-title-window">
@@ -38,6 +42,8 @@ export function TitleGhost(props: { artwork: LabelArtwork; result: RenderResult;
       ) : null}
       {letters ? <path d={letters} fill={bare} /> : null}
       {strokes ? <path d={strokes} fill="none" stroke={bare} strokeWidth={0.3} strokeLinecap="round" strokeLinejoin="round" /> : null}
+      {subLetters ? <path d={subLetters} fill={subBare} /> : null}
+      {subStrokes ? <path d={subStrokes} fill="none" stroke={subBare} strokeWidth={0.3} strokeLinecap="round" strokeLinejoin="round" /> : null}
     </g>
   );
 }
@@ -50,7 +56,7 @@ export const HANDLE_SIZE = 9;
 export function TitleFrame(props: { artwork: LabelArtwork; label: LabelSettings; handles: HandleSpot[]; selected: boolean; unit: number }) {
   const { artwork, label, handles, selected, unit } = props;
   const [x, y, w, h] = artwork.knockout;
-  const text = label.style === 'band' && handles.length > 1 ? geometryBounds(artwork.text) : null;
+  const text = label.style === 'band' && handles.length > 1 ? geometryBounds(allLettering(artwork)) : null;
   const s = HANDLE_SIZE * unit;
   return (
     <g pointerEvents="none">

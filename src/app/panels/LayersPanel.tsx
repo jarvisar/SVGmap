@@ -55,13 +55,22 @@ const FILL_MODE_LABELS: Record<FillMode, string> = {
   outline: 'Outline',
   hatch: 'Hatch',
   'hatch-outline': 'Hatch + outline',
+  contour: 'Contours',
 };
+
+/** The ways an area can be drawn in this output mode. Plotters can't fill. */
+export function fillModesFor(output: OutputMode): FillMode[] {
+  return output === 'plotter' ? ['outline', 'hatch', 'hatch-outline', 'contour'] : ['fill', 'outline', 'hatch', 'hatch-outline', 'contour'];
+}
+
+/** Whether a fill mode has hatch settings: all of them for hatching, the spacing for contours. */
+export const hatchOptionsFor = (mode: FillMode): 'all' | 'spacing' | null =>
+  mode === 'hatch' || mode === 'hatch-outline' ? 'all' : mode === 'contour' ? 'spacing' : null;
 
 // A plotter draws "fill" as hatching with an outline.
 const effectiveFillMode = (mode: FillMode, output: OutputMode): FillMode =>
   output === 'plotter' && mode === 'fill' ? 'hatch-outline' : mode;
 
-const isHatched = (mode: FillMode) => mode === 'hatch' || mode === 'hatch-outline';
 
 function LayerRow(props: { layer: LayerId; fill: boolean; hasOptions: boolean; children?: ReactNode }) {
   const { layer, fill } = props;
@@ -76,7 +85,7 @@ function LayerRow(props: { layer: LayerId; fill: boolean; hasOptions: boolean; c
 
   // Piers and plazas only cut the water unless they are engraved too.
   const drawn = layer !== 'decks' || decks.engrave;
-  const fillModes: FillMode[] = mode === 'plotter' ? ['outline', 'hatch', 'hatch-outline'] : ['fill', 'outline', 'hatch', 'hatch-outline'];
+  const fillModes = fillModesFor(mode);
   const name = LAYER_NAMES[layer];
   const expandable = enabled && props.hasOptions;
 
@@ -125,8 +134,9 @@ function FilterChecks(props: { layer: LayerId }) {
   );
 }
 
-// Also used for the title lettering and the route band.
-export function HatchOptions(props: { layer: HatchKey }) {
+// Also used for the title lettering, the route band and the pins. Contours
+// only use the spacing, as the distance between rings.
+export function HatchOptions(props: { layer: HatchKey; spacingOnly?: boolean }) {
   const style = useApp((s) => s.styles[s.mode]);
   const setStyle = useApp((s) => s.setStyle);
   const h = style.hatch[props.layer];
@@ -134,10 +144,17 @@ export function HatchOptions(props: { layer: HatchKey }) {
   return (
     <>
       <div className="row">
-        <NumberField label="Hatch spacing" value={h.spacing} {...fieldRange('style.hatch.*.spacing')} step={0.05} unit="mm" onChange={(spacing) => update({ spacing })} />
-        <NumberField label="Angle" value={h.angle} {...fieldRange('style.hatch.*.angle')} step={5} unit="°" onChange={(angle) => update({ angle })} />
+        <NumberField
+          label={props.spacingOnly ? 'Ring spacing' : 'Hatch spacing'}
+          value={h.spacing}
+          {...fieldRange('style.hatch.*.spacing')}
+          step={0.05}
+          unit="mm"
+          onChange={(spacing) => update({ spacing })}
+        />
+        {props.spacingOnly ? null : <NumberField label="Angle" value={h.angle} {...fieldRange('style.hatch.*.angle')} step={5} unit="°" onChange={(angle) => update({ angle })} />}
       </div>
-      <Check label="Cross-hatch" checked={h.cross} onChange={(cross) => update({ cross })} />
+      {props.spacingOnly ? null : <Check label="Cross-hatch" checked={h.cross} onChange={(cross) => update({ cross })} />}
     </>
   );
 }
@@ -223,13 +240,13 @@ export function LayersPanel() {
       <div className="subhead">Areas</div>
       {FILL_ORDER.map((layer) => {
         const drawn = layer !== 'decks' || engraveDecks;
-        const hatched = drawn && isHatched(effectiveFillMode(fillModes[layer], mode));
+        const hatched = drawn ? hatchOptionsFor(effectiveFillMode(fillModes[layer], mode)) : null;
         return (
-          <LayerRow key={layer} layer={layer} fill hasOptions={hatched || layer === 'water' || layer === 'decks' || Boolean(FILTERS[layer])}>
+          <LayerRow key={layer} layer={layer} fill hasOptions={hatched !== null || layer === 'water' || layer === 'decks' || Boolean(FILTERS[layer])}>
             {layer === 'water' ? <WaterOptions /> : null}
             {layer === 'decks' ? <DeckOptions /> : null}
             <FilterChecks layer={layer} />
-            {hatched ? <HatchOptions layer={layer} /> : null}
+            {hatched ? <HatchOptions layer={layer} spacingOnly={hatched === 'spacing'} /> : null}
           </LayerRow>
         );
       })}

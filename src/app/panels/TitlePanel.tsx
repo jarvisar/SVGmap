@@ -8,7 +8,8 @@ import { Check, ColorInput, Disclosure, Field, NumberField, Section, Segmented, 
 import { checkFont, storeFont } from '../customFont.ts';
 import { AUTOFIT_HELP, RESET_OFFSET, boxResized, labelMoved } from '../labelDrag.ts';
 import { useApp } from '../store.ts';
-import { HatchOptions } from './LayersPanel.tsx';
+import { PlaceholderMenu, PlaceholderPreview, withToken } from '../components/Placeholders.tsx';
+import { HatchOptions, fillModesFor, hatchOptionsFor } from './LayersPanel.tsx';
 import { PresetPicker, STYLE_NAMES, StylePicker } from './TitleLooks.tsx';
 
 const POSITIONS: { value: LabelPosition; label: string }[] = [
@@ -26,6 +27,7 @@ const LETTERING: Record<FillMode, string> = {
   outline: 'Outline',
   hatch: 'Hatched',
   'hatch-outline': 'Hatched with outline',
+  contour: 'Contours',
 };
 
 // What the line colour applies to. Solid shapes and ornaments go with the lettering.
@@ -101,13 +103,23 @@ export function TitlePanel() {
 
   const kind = label.style;
   const mapInLetters = kind === 'letters' && label.lettersMode === 'window';
-  const fillModes: FillMode[] = mode === 'plotter' ? ['outline', 'hatch', 'hatch-outline'] : ['fill', 'outline', 'hatch', 'hatch-outline'];
-  const letteringMode = mode === 'plotter' && style.fillModes.text === 'fill' ? 'hatch-outline' : style.fillModes.text;
+  const fillModes = fillModesFor(mode);
+  const shownMode = (m: FillMode) => (mode === 'plotter' && m === 'fill' ? 'hatch-outline' : m);
+  const letteringMode = shownMode(style.fillModes.text);
+  const subtitleMode = shownMode(style.fillModes.subtitle ?? style.fillModes.text);
   const singleLine = fontInfo(label.font)?.kind === 'stroke';
+  const subtitleShown = SUBTITLED.includes(label.style) && label.subtitle.trim() !== '';
+  const subtitleSingleLine = fontInfo(label.subtitleFont || label.font)?.kind === 'stroke';
+  // The title and subtitle share one hatch. Single-line letters aren't hatched.
+  const letteringHatch = [
+    !mapInLetters && !singleLine ? hatchOptionsFor(letteringMode) : null,
+    subtitleShown && !subtitleSingleLine ? hatchOptionsFor(subtitleMode) : null,
+  ];
+  const hatchShown = letteringHatch.includes('all') ? 'all' : letteringHatch.includes('spacing') ? 'spacing' : null;
   const solidHint = 'Engraves the shape and leaves the letters bare.';
   const hasLines =
     kind === 'box' ? label.boxBorder && !label.solid : kind === 'band' ? label.divider || label.ornament : kind === 'letters' ? mapInLetters : kind !== 'inset';
-  const setColor = (element: 'text' | 'frame', color: string) => setStyle({ colors: { ...style.colors, [element]: color } });
+  const setColor = (element: 'text' | 'subtitle' | 'frame', color: string) => setStyle({ colors: { ...style.colors, [element]: color } });
 
   return (
     <Section title="Title" summary={label.enabled && label.text.trim() ? `${label.text} (${STYLE_NAMES[kind].toLowerCase()})` : 'Off'}>
@@ -115,6 +127,7 @@ export function TitlePanel() {
       {label.enabled ? (
         <>
           <TextField label="Text" value={label.text} onChange={(text) => set({ text })} />
+          <PlaceholderPreview text={label.text} />
           <Field label="Style">
             <StylePicker value={kind} onChange={(value) => set({ style: value })} />
           </Field>
@@ -129,9 +142,14 @@ export function TitlePanel() {
                 placeholder="Optional"
                 onChange={(subtitle) => set({ subtitle })}
               />
-              <button type="button" className="btn btn-small" style={{ marginTop: 6 }} onClick={subtitleFromCoordinates}>
-                Use the coordinates
-              </button>
+              <PlaceholderPreview text={label.subtitle} />
+              <div className="button-row placeholder-row">
+                <button type="button" className="btn btn-small" onClick={subtitleFromCoordinates}>
+                  Use the coordinates
+                </button>
+                <PlaceholderMenu onInsert={(token) => set({ subtitle: withToken(label.subtitle, token) })} />
+              </div>
+              <div className="hint">Placeholders like {'{coords}'}, {'{km}'} or {'{date}'} are filled in from the map, and work in the title and pins too.</div>
             </>
           ) : null}
 
@@ -227,7 +245,20 @@ export function TitlePanel() {
               </div>
             </Field>
           )}
-          {!mapInLetters && !singleLine && (letteringMode === 'hatch' || letteringMode === 'hatch-outline') ? <HatchOptions layer="text" /> : null}
+          {subtitleShown ? (
+            <Field label="Subtitle lettering" hint="A layer of its own, so it can have its own colour, process or pen.">
+              <div className="route-style">
+                <ColorInput label="Subtitle colour" value={style.colors.subtitle ?? style.colors.text} onChange={(color) => setColor('subtitle', color)} />
+                <Select<FillMode>
+                  label="Subtitle lettering"
+                  value={subtitleMode}
+                  options={fillModes.map((m) => ({ value: m, label: LETTERING[m] }))}
+                  onChange={(m) => setStyle({ fillModes: { ...style.fillModes, subtitle: m } })}
+                />
+              </div>
+            </Field>
+          ) : null}
+          {hatchShown ? <HatchOptions layer="text" spacingOnly={hatchShown === 'spacing'} /> : null}
           {hasLines ? (
             <Field label="Lines" hint={LINES_HINT[kind]}>
               <ColorInput label="Line colour" value={style.colors.frame} onChange={(color) => setColor('frame', color)} />

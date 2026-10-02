@@ -117,6 +117,7 @@ function validString(path: string[], value: string): boolean {
   if (path.length === 1 && key === 'mode') return OUTPUT_MODES.includes(value);
   // Saved before there was a choice of material, 'material' was the wood one and falls back to birch.
   if (path.length === 1 && key === 'previewLook') return value === 'colors' || Object.hasOwn(MATERIALS, value);
+  if (path.join('.') === 'exportOptions.format') return (['svg', 'dxf', 'hpgl', 'png'] as string[]).includes(value);
   if (key === 'routeDraw') return (ROUTE_DRAWS as string[]).includes(value);
   if (path.length === 2 && path[0] === 'label') return LABEL_CHOICES[key as keyof LabelSettings]?.includes(value) ?? true;
   return true;
@@ -178,6 +179,8 @@ export function unpackPicks(json: unknown): unknown {
 function fitSetting(path: string[], value: number): number | undefined {
   if (!Number.isFinite(value)) return undefined;
   switch (path.join('.')) {
+    case 'exportOptions.pngDpi':
+      return [150, 300, 600].includes(value) ? value : undefined;
     case 'area.widthM':
       return value > 0 ? value : undefined;
     case 'area.lat':
@@ -255,6 +258,26 @@ export function fillRouteColours(settings: unknown): unknown {
   return { ...settings, styles };
 }
 
+/**
+ * The subtitle used to be drawn with the title. Settings and links from then
+ * get the title's colour and style for it, so their files stay the same.
+ * force replaces what's there, for a link merged onto the new defaults.
+ */
+export function subtitleLikeTitle(settings: unknown, force = false): unknown {
+  if (!isObject(settings) || !isObject(settings.styles)) return settings;
+  const styles: Record<string, unknown> = { ...settings.styles };
+  for (const [mode, style] of Object.entries(styles)) {
+    if (!isObject(style)) continue;
+    const next: Record<string, unknown> = { ...style };
+    for (const key of ['colors', 'fillModes'] as const) {
+      const table = style[key];
+      if (isObject(table) && typeof table.text === 'string' && (force || table.subtitle === undefined)) next[key] = { ...table, subtitle: table.text };
+    }
+    styles[mode] = next;
+  }
+  return { ...settings, styles };
+}
+
 export function migrateSettings(persisted: unknown, version: number): unknown {
   if (!isObject(persisted)) return persisted;
   let out = persisted;
@@ -265,5 +288,6 @@ export function migrateSettings(persisted: unknown, version: number): unknown {
     }
     out = { ...out, label };
   }
-  return version < 3 ? fillRouteColours(out) : out;
+  if (version < 3) out = fillRouteColours(out) as Record<string, unknown>;
+  return version < 4 ? subtitleLikeTitle(out) : out;
 }

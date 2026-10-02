@@ -1,11 +1,11 @@
 // PNG of the piece as the preview shows it, so a laser map comes out as wood
 // and not as LightBurn layer colours with hairline strokes.
+import { crc32 } from '../../engine/export/crc32.ts';
 import type { RenderResult } from '../../engine/result.ts';
 import { escapeXml, fmt } from '../../engine/svg/format.ts';
 import type { PreviewLook } from '../store.ts';
 import { groupPaint, previewBackground } from './paint.ts';
 
-const DPI = 300;
 // Safari won't make a canvas bigger than 16384 px a side, and big canvases
 // fail on phones. A 600 x 400 mm piece at 300 DPI is about 33 million pixels.
 const MAX_SIDE = 16384;
@@ -37,18 +37,6 @@ function previewSvg(result: RenderResult, look: PreviewLook, px: number, py: num
   return out.join('\n');
 }
 
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-
-function crc32(bytes: Uint8Array) {
-  let c = 0xffffffff;
-  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-}
-
 // Canvas PNGs have no resolution, so most programs open them at 72 or 96 DPI.
 // A pHYs chunk after the header makes them open at the piece's real size.
 async function withResolution(png: Blob, pixelsPerMetre: number): Promise<Blob> {
@@ -75,8 +63,9 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-export async function toPng(result: RenderResult, look: PreviewLook): Promise<Blob> {
-  let scale = DPI / 25.4;
+// dpi is the resolution asked for. It comes down for a piece too big for the browser's canvas.
+export async function toPng(result: RenderResult, look: PreviewLook, dpi = 300): Promise<Blob> {
+  let scale = dpi / 25.4;
   scale = Math.min(scale, MAX_SIDE / Math.max(result.width, result.height));
   scale = Math.min(scale, Math.sqrt(MAX_PIXELS / (result.width * result.height)));
   // Halve the size when the browser can't make a canvas that big.

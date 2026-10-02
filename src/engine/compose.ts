@@ -22,7 +22,7 @@ import { cleanupLines } from './lines/cleanup.ts';
 import { lineCoverage } from './lines/coverage.ts';
 import { type LineItem, type Path, pathLength } from './lines/geometry.ts';
 import { weldPaths } from './lines/weld.ts';
-import { contourFill, hatchWith, orderForPlotting, outlines } from './plotter.ts';
+import { contourFill, contourLines, hatchWith, orderForPlotting, outlines } from './plotter.ts';
 import type { Prepared, PreparedLine, PreparedPolygon } from './prepare.ts';
 import type { GroupElement, OutputGroup, OutputPath, PlotterStats, RenderResult } from './result.ts';
 import { buildRoutes, makeRouteClearer } from './routes/draw.ts';
@@ -43,6 +43,7 @@ import {
 import { polylineD } from './svg/format.ts';
 import { type LabelArtwork, buildLabel } from './text/label.ts';
 import type { LoadedFont } from './text/outline.ts';
+import { fillLabel, fillPlaceholders, missingWarnings, placeholderValues } from './text/placeholders.ts';
 import { FLAG, acceptLine, acceptPolygon } from './tiles/schema.ts';
 
 export interface ComposeFonts {
@@ -140,9 +141,16 @@ export function compose(
   const pen = Math.max(s.plotter.penWidth, 0.05);
   const hairline = plotter ? pen : s.mode === 'laser' ? s.laser.lineWidth : 0.1;
 
+  // {tokens} in the title, the subtitle and the marks.
+  const values = placeholderValues({ lat: s.area.lat, lon: s.area.lon, scale: prepared.transform.metresPerMm * 1000, routes: s.routes.items, title: s.label.text });
+  const missing = new Set<string>();
+  const shownLabel = fillLabel(s.label, values, missing);
+  const shownMarks = (s.marks ?? []).map((m) => (m.text.includes('{') ? { ...m, text: fillPlaceholders(m.text, values, missing) } : m));
+  warnings.push(...missingWarnings(missing));
+
   // Title
   const map = { metresPerMm: prepared.transform.metresPerMm, bearing: s.area.bearing };
-  const built = buildLabel(layout, s.label, fonts.title, fonts.subtitle, map);
+  const built = buildLabel(layout, shownLabel, fonts.title, fonts.subtitle, map);
   warnings.push(...built.warnings);
   if (built.error) warnings.push(built.error);
   const label: LabelArtwork | null = built.artwork;
@@ -152,7 +160,7 @@ export function compose(
   lap('label');
 
   // Pins and text. They're drawn over everything else in the window, title included.
-  const marks = drawMarks(s.marks ?? [], fonts.marks ?? new Map(), s.label.font, style.colors.text, prepared.transform, window, titleStroke);
+  const marks = drawMarks(shownMarks, fonts.marks ?? new Map(), s.label.font, style.colors.text, prepared.transform, window, titleStroke);
   warnings.push(...marks.warnings);
   const clearMarks = makeMarkClearer(marks.clear);
   lap('marks');
@@ -319,8 +327,9 @@ export function compose(
     }
     // concat, not push(...), since fine hatching of a big area is more lines than a call can take.
     let lines: Path[] = [];
+    const h = style.hatch[hatchKey];
+    if (effective === 'contour') lines = contourLines(paths, Math.max(h.spacing, 0.05));
     if (effective === 'hatch' || effective === 'hatch-outline') {
-      const h = style.hatch[hatchKey];
       lines = lines.concat(hatchWith(paths, { ...h, spacing: Math.max(h.spacing, 0.05) }));
     }
     if (effective === 'outline' || effective === 'hatch-outline') lines = lines.concat(outlines(paths));
@@ -407,21 +416,40 @@ export function compose(
 
   if (label) {
     const letters = unionAll(label.text.rings.map(toPath64));
+    const subLetters = unionAll(label.subtitle.rings.map(toPath64));
     const solid = unionAll(label.solid.map(toPath64));
     let strokes = label.text.strokes;
+    let subStrokes = label.subtitle.strokes;
     let engraved: Paths64;
+    let subEngraved: Paths64;
     if (label.reversed && solid.length) {
       // Letters on the plate are left bare, and any off it are drawn as usual.
       // Single-line letters get a width that still shows once cut out.
-      const cut = unionAll([...letters, ...bufferLines(strokes, Math.max(titleStroke, 0.4) / 2, true)]);
+      const cut = unionAll([...letters, ...subLetters, ...bufferLines([...strokes, ...subStrokes], Math.max(titleStroke, 0.4) / 2, true)]);
       engraved = unionAll([...subtract(solid, cut), ...subtract(letters, solid)]);
+      subEngraved = subtract(subLetters, solid);
       strokes = linesOutside(strokes, solid);
+      subStrokes = linesOutside(subStrokes, solid);
     } else {
       engraved = unionAll([...letters, ...solid]);
+      subEngraved = subLetters;
     }
     fillDraft('text', 'text', 'Title', engraved, style.fillModes.text, 'text');
+    // A layer of its own, so it can be its own colour, process or pen.
+    fillDraft('subtitle', 'subtitle', 'Subtitle', subEngraved, style.fillModes.subtitle ?? style.fillModes.text, 'text');
+    if (subStrokes.length > 0) {
+      drafts.push({
+        id: subEngraved.length ? 'subtitle-lines' : 'subtitle',
+        element: 'subtitle',
+        label: subEngraved.length ? 'Subtitle (single-line)' : 'Subtitle',
+        kind: 'stroke',
+        strokeWidth: titleStroke,
+        lines: [{ paths: subStrokes }],
+      });
+    }
     if (strokes.length > 0) {
-      // A band can mix an outline title with a single-line subtitle, and group ids have to stay unique.
+      // The legend's numbers and the badge's N are in the subtitle's font,
+      // which can be single-line under an outline title. Group ids have to stay unique.
       const mixed = engraved.length > 0;
       drafts.push({
         id: mixed ? 'text-lines' : 'text',
@@ -604,7 +632,7 @@ export function compose(
     },
     warnings,
     meta: {
-      title: s.title,
+      title: fillPlaceholders(s.title, values),
       centre,
       bearing: s.area.bearing,
       widthM: prepared.widthM,

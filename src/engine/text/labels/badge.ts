@@ -85,13 +85,14 @@ export function layoutBadgeLabel(
   const lineFit = (row: { w: number }, h: number) => Math.min(h, (h * MAX_SWEEP * mid) / row.w);
 
   let lettering: TextGeometry = { rings: [], strokes: [] };
+  let subLettering: TextGeometry = { rings: [], strokes: [] };
   const titleRow = sized(title, band * 0.5);
   const titleH = lineFit(titleRow, titleRow.h);
   lettering = mergeGeometry(lettering, bendText(scaled(titleRow.g, titleH / titleRow.h), (titleRow.w * titleH) / titleRow.h, titleH, cx, cy, mid, true));
   if (subtitle) {
     const row = sized(subtitle, band * 0.36);
     const h = lineFit(row, row.h);
-    lettering = mergeGeometry(lettering, bendText(scaled(row.g, h / row.h), (row.w * h) / row.h, h, cx, cy, mid, false));
+    subLettering = bendText(scaled(row.g, h / row.h), (row.w * h) / row.h, h, cx, cy, mid, false);
   }
   // The stars count as lettering, so a solid ring leaves them bare too.
   const starR = band * 0.17;
@@ -124,6 +125,7 @@ export function layoutBadgeLabel(
     knockout: [placed.at[0], placed.at[1], D, D],
     clear: showMap ? [circle(cx, cy, R), circle(cx, cy, r3, true)] : [circle(cx, cy, R)],
     text: lettering,
+    subtitle: subLettering,
     solid,
     reversed: s.solid,
     frame,

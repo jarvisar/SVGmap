@@ -5,13 +5,15 @@ import { type MapMark, MARK_RANGES, type MarkFill, type MarkSide, hasText, markN
 import { MARK_SHAPES, SHAPE_ORDER } from '../../engine/marks/shapes.ts';
 import { ColorInput, Check, Disclosure, Field, NumberField, Segmented, Select, SelectField, Slider } from '../components/controls.tsx';
 import { MarkIcon } from '../components/MarkIcon.tsx';
+import { PlaceholderMenu, PlaceholderPreview, withToken } from '../components/Placeholders.tsx';
 import { type Place, searchPlaces } from '../geocode.ts';
 import { duplicateMark, markSpot, pieceLayout, removeMark, setMarkAnchor, updateMark, useMarkUi } from '../marks.ts';
 import { useApp } from '../store.ts';
 import { asChange } from '../undo.ts';
+import { fillModesFor } from './LayersPanel.tsx';
 import { fontOptions } from './TitlePanel.tsx';
 
-const FILL_LABELS: Record<MarkFill, string> = { fill: 'Filled', outline: 'Outline', hatch: 'Hatched', 'hatch-outline': 'Hatched with outline' };
+const FILL_LABELS: Record<MarkFill, string> = { fill: 'Filled', outline: 'Outline', hatch: 'Hatched', 'hatch-outline': 'Hatched with outline', contour: 'Contours' };
 
 const SIDES: { value: MarkSide; label: string }[] = [
   { value: 'right', label: 'Right' },
@@ -173,7 +175,7 @@ export function MarkEditor(props: { mark: MapMark }) {
   }, [focusText, mark.id]);
 
   const typed = hasText(mark);
-  const fills: MarkFill[] = mode === 'plotter' ? ['outline', 'hatch', 'hatch-outline'] : ['fill', 'outline', 'hatch', 'hatch-outline'];
+  const fills: MarkFill[] = fillModesFor(mode);
   const fill = mode === 'plotter' && mark.fill === 'fill' ? 'hatch-outline' : mark.fill;
   const fonts = [{ value: '', label: 'Same as the title', group: '' }, ...fontOptions(customFontName, false)];
 
@@ -194,6 +196,10 @@ export function MarkEditor(props: { mark: MapMark }) {
           onChange={(e) => set({ text: markText(e.target.value) })}
         />
         {mark.shape === 'none' && !typed ? <div className="hint">Text with nothing typed isn't drawn.</div> : null}
+        <PlaceholderPreview text={mark.text} />
+        <div className="button-row placeholder-row">
+          <PlaceholderMenu onInsert={(token) => set({ text: markText(withToken(mark.text, token)) })} />
+        </div>
       </div>
       {typed && mark.shape !== 'none' ? (
         <Field label="Text goes">

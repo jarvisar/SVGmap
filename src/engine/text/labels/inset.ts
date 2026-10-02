@@ -38,7 +38,12 @@ export function layoutInsetLabel(layout: Layout, s: LabelSettings, title: TextGe
   const solid: Path[] = [];
   const boxes: Path[] = [];
 
-  const put = (g: TextGeometry, height: number, atTop: boolean) => {
+  let subLettering: TextGeometry = NO_TEXT;
+  const put = (g: TextGeometry, height: number, atTop: boolean, isSubtitle = false) => {
+    const add = (placed: TextGeometry) => {
+      if (isSubtitle) subLettering = mergeGeometry(subLettering, placed);
+      else lettering = mergeGeometry(lettering, placed);
+    };
     const row = sized(g, height);
     // Between the edge of the artwork and the map.
     const zone = round ? art.r - win.r : atTop ? win.y - art.y : art.y + art.h - (win.y + win.h);
@@ -57,7 +62,7 @@ export function layoutInsetLabel(layout: Layout, s: LabelSettings, title: TextGe
         w = MAX_SWEEP * mid;
         mid = art.r - fromOuter() - h / 2;
       }
-      lettering = mergeGeometry(lettering, bendText(scaled(row.g, h / row.h), w, h, cx, cy, mid, atTop));
+      add(bendText(scaled(row.g, h / row.h), w, h, cx, cy, mid, atTop));
       const centre = atTop ? -Math.PI / 2 : Math.PI / 2;
       const half = (w / 2 + space()) / mid;
       const arc = (r: number, from: number, to: number) => {
@@ -93,7 +98,7 @@ export function layoutInsetLabel(layout: Layout, s: LabelSettings, title: TextGe
       }
     }
     const x = cx - w / 2;
-    lettering = mergeGeometry(lettering, moved(scaled(row.g, h / row.h), x, y));
+    add(moved(scaled(row.g, h / row.h), x, y));
     breaks.push(rect(x - space(), Math.min(outer, edge) - 1, w + 2 * space(), zone + 2));
     boxes.push(rect(x - space(), y, w + 2 * space(), h));
     // Small diamonds where the thin line stops.
@@ -108,13 +113,14 @@ export function layoutInsetLabel(layout: Layout, s: LabelSettings, title: TextGe
   const atTop = s.bandPosition === 'top';
   const height = s.textHeight * k * 0.62;
   put(title, height, atTop);
-  if (subtitle) put(subtitle, height * 0.6, !atTop);
+  if (subtitle) put(subtitle, height * 0.6, !atTop, true);
 
   return artwork({
     // Only the title's, so fitting a route doesn't steer around the subtitle too.
     knockout: boundsOf([boxes[0]]),
     clear,
     text: lettering,
+    subtitle: subLettering,
     solid,
     borderBreaks: breaks,
   });

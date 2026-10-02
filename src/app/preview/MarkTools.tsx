@@ -74,7 +74,7 @@ export function MarkDrawing(props: {
                 </>
               ) : null}
               {art.fill.length ? (
-                <path d={rings(art.fill)} fill={outline ? 'none' : ink} fillOpacity={mark.fill === 'hatch' ? 0.75 : 1} stroke={outline ? ink : 'none'} strokeWidth={width} />
+                <path d={rings(art.fill)} fill={outline ? 'none' : ink} fillOpacity={mark.fill === 'hatch' || mark.fill === 'contour' ? 0.75 : 1} stroke={outline ? ink : 'none'} strokeWidth={width} />
               ) : null}
               {art.holes.length ? <path d={rings(art.holes)} fill={outline ? 'none' : paper} stroke={outline ? ink : 'none'} strokeWidth={width} /> : null}
               {art.extra.length ? <path d={rings(art.extra)} fill={outline ? 'none' : ink} stroke={outline ? ink : 'none'} strokeWidth={width} /> : null}
