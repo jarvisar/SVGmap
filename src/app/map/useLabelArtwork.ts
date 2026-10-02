@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { download } from '../../engine/download.ts';
 import type { Layout } from '../../engine/layout/layout.ts';
-import { type LabelArtwork, type LabelSettings, buildLabel } from '../../engine/text/label.ts';
+import { type LabelArtwork, type LabelSettings, type MapInfo, buildLabel } from '../../engine/text/label.ts';
 import type { FontLoader } from '../../engine/text/loadFont.ts';
 import { getCustomFont } from '../customFont.ts';
 
@@ -36,15 +36,15 @@ export interface LabelPreview {
 
 // Lays out the title on the main thread, for the map overlay and for fitting
 // the map to a route.
-export async function loadLabelArtwork(layout: Layout, label: LabelSettings): Promise<LabelPreview> {
+export async function loadLabelArtwork(layout: Layout, label: LabelSettings, map: MapInfo | null = null): Promise<LabelPreview> {
   if (!label.enabled || !label.text.trim()) return { artwork: null, error: null };
   const custom = getCustomFont();
   const fonts = await fontLoader();
   const [title, subtitle] = await Promise.all([fonts.load(label.font, custom), fonts.load(label.subtitleFont || label.font, custom)]);
-  return buildLabel(layout, label, title, subtitle);
+  return buildLabel(layout, label, title, subtitle, map);
 }
 
-export function useLabelArtwork(layout: Layout | null, label: LabelSettings, customFontId: string | null): LabelPreview {
+export function useLabelArtwork(layout: Layout | null, label: LabelSettings, customFontId: string | null, map: MapInfo | null = null): LabelPreview {
   const [preview, setPreview] = useState<LabelPreview>({ artwork: null, error: null });
   useEffect(() => {
     let active = true;
@@ -52,7 +52,7 @@ export function useLabelArtwork(layout: Layout | null, label: LabelSettings, cus
       setPreview({ artwork: null, error: null });
       return;
     }
-    loadLabelArtwork(layout, label)
+    loadLabelArtwork(layout, label, map)
       .then((result) => {
         if (active) setPreview(result);
       })
@@ -62,6 +62,6 @@ export function useLabelArtwork(layout: Layout | null, label: LabelSettings, cus
     return () => {
       active = false;
     };
-  }, [layout, label, customFontId]);
+  }, [layout, label, customFontId, map]);
   return preview;
 }

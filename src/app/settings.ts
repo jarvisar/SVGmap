@@ -13,6 +13,7 @@ import {
   type RouteData,
   defaultLineSpacing,
 } from '../engine/settings.ts';
+import { DEFAULT_LABEL, LABEL_CHOICES, type LabelSettings } from '../engine/text/label.ts';
 
 export type CleanupPreset = 'off' | 'light' | 'standard' | 'strong' | 'custom';
 export type LaserPalette = keyof typeof LASER_PALETTES;
@@ -104,6 +105,7 @@ function validString(path: string[], value: string): boolean {
   if (key === 'background' || path[path.length - 2] === 'colors') return HEX_COLOR.test(value);
   if (path.length === 1 && key === 'mode') return OUTPUT_MODES.includes(value);
   if (key === 'routeDraw') return (ROUTE_DRAWS as string[]).includes(value);
+  if (path.length === 2 && path[0] === 'label') return LABEL_CHOICES[key as keyof LabelSettings]?.includes(value) ?? true;
   return true;
 }
 
@@ -164,4 +166,27 @@ export function mergeSettings<T>(base: T, patch: unknown, path: string[] = []): 
   }
   if (typeof patch === 'number') return ((typeof base === 'number' ? fitSetting(path, patch) : undefined) ?? base) as T;
   return (typeof patch === 'boolean' && typeof base === 'boolean' ? patch : base) as T;
+}
+
+// Label defaults that changed in version 2. Saved values still at the old
+// default move to the new one, anything the user set is kept. The box came out
+// too big, so it's 85% of what it was. Subtitle spacing used to be the band's
+// spacing itself and is now on top of each style's own.
+const LABEL_V1: Partial<Record<keyof LabelSettings, number>> = {
+  textHeight: 7.776,
+  maxWidth: 77.76,
+  paddingX: 1.98,
+  paddingY: 1.548,
+  borderWidth: 0.25,
+  subtitleSpacing: 1.2,
+  dividerWidth: 0.1,
+};
+
+export function migrateSettings(persisted: unknown, version: number): unknown {
+  if (version >= 2 || !isObject(persisted) || !isObject(persisted.label)) return persisted;
+  const label: Record<string, unknown> = { ...persisted.label };
+  for (const [key, old] of Object.entries(LABEL_V1)) {
+    if (label[key] === old) label[key] = DEFAULT_LABEL[key as keyof LabelSettings];
+  }
+  return { ...persisted, label };
 }

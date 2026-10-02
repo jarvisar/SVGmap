@@ -20,6 +20,18 @@ export const LABEL_STYLES: LabelStyle[] = ['box', 'band', 'ribbon', 'badge', 'le
 
 export type LabelPosition = CornerPosition;
 
+// The settings that pick one of a few options, for checking saved settings and links.
+export const LABEL_CHOICES: Partial<Record<keyof LabelSettings, readonly string[]>> = {
+  style: LABEL_STYLES,
+  position: ['lower_right', 'lower_left', 'upper_right', 'upper_left', 'lower_center', 'upper_center', 'center'],
+  bandPosition: ['bottom', 'top'],
+  bandAlign: ['left', 'center', 'right'],
+  badgeCentre: ['compass', 'map'],
+  lettersMode: ['cutout', 'window'],
+  lettersAlign: ['top', 'center', 'bottom'],
+  legendUnits: ['metric', 'imperial'],
+};
+
 export interface LabelSettings {
   enabled: boolean;
   text: string;

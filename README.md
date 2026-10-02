@@ -23,7 +23,7 @@ The settings are:
 * Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border.
 * Output switches between laser, plotter and print.
 * Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline or hatching).
-* Title adds a box or a full-width band with a title and subtitle. You can load your own font file.
+* Title adds a title and subtitle in one of seven styles. See below. You can load your own font file.
 * Line cleanup removes doubled and crowded lines. See below.
 * Map data sets where the map tiles come from, and can add buildings OpenStreetMap is missing. See below.
 
@@ -42,6 +42,18 @@ When a new version is deployed, a notice asks you to reload. It never reloads on
 * Print: coloured themes with wider lines for bigger roads.
 
 The file is sized in millimetres. Check the imported size in your laser software matches the size shown under the preview.
+
+## Title Styles
+
+* Box: one line in a box in a corner, like the original plaque.
+* Band: a strip across the top or bottom, like a poster. The map stops short of the divider by the same gap as at the border.
+* Ribbon: a banner with folded tails. `Arch` bends it.
+* Badge: a round seal with the title over the top, the subtitle along the bottom and a compass rose that points to true north when the map is rotated.
+* Big letters: the title across the whole map. The map goes around the letters, or only shows inside them. Showing it inside needs an outline font.
+* In border: the title sits in a gap in the border, with the subtitle in the border on the other side. On a round piece it follows the curve.
+* Legend: the title, subtitle, a scale bar and a north arrow in a box. The scale bar picks a round distance in metres or feet that fits.
+
+The box, ribbon and badge can be made solid, which engraves the shape and leaves the letters bare. The presets under Title set the style, fonts and options in one click and keep your title text. Those that use coordinates fill them in when the subtitle is empty.
 
 ## Line Cleanup
 

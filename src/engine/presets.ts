@@ -127,5 +127,62 @@ export const PLACE_PRESETS: PlacePreset[] = [
   { id: 'sydney', name: 'Sydney', label: 'SYDNEY', lon: 151.2093, lat: -33.8610, widthM: 4000 },
 ];
 
+export interface LabelPreset {
+  id: string;
+  name: string;
+  // Filled in from the map centre when the subtitle is empty.
+  subtitle?: 'coordinates' | 'short';
+  label: Partial<LabelSettings>;
+}
+
+// A few looks for each title style. They leave the title text alone and put
+// size and letter spacing back to normal.
+export const LABEL_PRESETS: LabelPreset[] = [
+  { id: 'plaque', name: 'Plaque', label: { style: 'box', font: 'montserrat', boxBorder: true, solid: false, position: 'lower_right' } },
+  { id: 'plate', name: 'Engraved plate', label: { style: 'box', font: 'oswald', solid: true, position: 'lower_right' } },
+  {
+    id: 'poster',
+    name: 'Poster',
+    subtitle: 'coordinates',
+    label: { style: 'band', font: 'montserrat', bandPosition: 'bottom', bandAlign: 'center', divider: true, ornament: true },
+  },
+  {
+    id: 'gallery',
+    name: 'Gallery',
+    subtitle: 'coordinates',
+    label: { style: 'band', font: 'cinzel', bandPosition: 'top', bandAlign: 'left', bandHeight: 15, divider: true, ornament: false },
+  },
+  { id: 'banner', name: 'Vintage banner', label: { style: 'ribbon', font: 'cinzel', ribbonArch: 45, solid: false, position: 'lower_center' } },
+  { id: 'dark-ribbon', name: 'Dark ribbon', label: { style: 'ribbon', font: 'josefin', ribbonArch: 0, solid: true, position: 'upper_center' } },
+  { id: 'seal', name: 'Compass seal', subtitle: 'short', label: { style: 'badge', font: 'josefin', badgeCentre: 'compass', solid: false, position: 'lower_right' } },
+  { id: 'solid-seal', name: 'Solid seal', subtitle: 'short', label: { style: 'badge', font: 'cinzel', badgeCentre: 'compass', solid: true, position: 'lower_right' } },
+  { id: 'stencil', name: 'Stencil', label: { style: 'letters', font: 'bebas', lettersMode: 'cutout', lettersAlign: 'center' } },
+  { id: 'map-letters', name: 'Map in letters', label: { style: 'letters', font: 'bebas', lettersMode: 'window', lettersAlign: 'center' } },
+  { id: 'inscription', name: 'Inscription', subtitle: 'coordinates', label: { style: 'inset', font: 'cinzel', bandPosition: 'bottom' } },
+  {
+    id: 'field-map',
+    name: 'Field map',
+    subtitle: 'coordinates',
+    label: { style: 'legend', font: 'oswald', position: 'lower_left', legendScale: true, legendNorth: true, boxBorder: true },
+  },
+];
+
+// Four decimals is about 10 m. The short form fits around a badge.
+export function formatCoordinates(lat: number, lon: number, short = false): string {
+  const digits = short ? 2 : 4;
+  const ns = `${Math.abs(lat).toFixed(digits)}° ${lat >= 0 ? 'N' : 'S'}`;
+  const ew = `${Math.abs(lon).toFixed(digits)}° ${lon >= 0 ? 'E' : 'W'}`;
+  return short ? `${ns} ${ew}` : `${ns}, ${ew}`;
+}
+
+const COORDINATES = /^\d+(\.\d+)?° [NS],? \d+(\.\d+)?° [EW]$/;
+
+// A subtitle the user typed is kept. Coordinates are rewritten in the preset's form.
+export function applyLabelPreset(preset: LabelPreset, label: LabelSettings, lat: number, lon: number): LabelSettings {
+  const typed = label.subtitle.trim();
+  const subtitle = preset.subtitle && (!typed || COORDINATES.test(typed)) ? formatCoordinates(lat, lon, preset.subtitle === 'short') : label.subtitle;
+  return { ...label, size: 100, titleSpacing: 1, subtitleSpacing: 1, subtitleFont: '', ...preset.label, subtitle };
+}
+
 export const DEFAULT_PRODUCT = PRODUCT_PRESETS[0];
 export const DEFAULT_PLACE = PLACE_PRESETS[0];

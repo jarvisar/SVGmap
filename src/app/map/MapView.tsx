@@ -6,11 +6,11 @@ import { metresPerPixel, zoomForMetres } from '../../engine/geo/mercator.ts';
 import type { AreaSpec } from '../../engine/geo/transform.ts';
 import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
 import { bandPathD, shapePathD } from '../../engine/layout/shapes.ts';
-import { polylineD } from '../../engine/svg/format.ts';
 import type { LabelArtwork } from '../../engine/text/label.ts';
 import { LockIcon } from '../components/controls.tsx';
 import { routesGeoJson } from '../routes.ts';
 import { scaleOf, useApp } from '../store.ts';
+import { BREAK_MASK, BorderBreakMask, TitleOverlay } from './TitleOverlay.tsx';
 import { useLabelArtwork } from './useLabelArtwork.ts';
 
 const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
@@ -108,7 +108,15 @@ export function MapView() {
   }, [product, border]);
   const frame = useMemo(() => (layout && size.w > 0 ? fitFrame(layout, size.w, size.h) : null), [layout, size]);
   frameRef.current = frame;
-  const { artwork, error: labelError } = useLabelArtwork(layout, label, customFontId);
+  // The scale bar and north arrows follow the map. Other titles don't need
+  // it, so they aren't laid out again every time the map moves.
+  const needsMap = label.style === 'legend' || label.style === 'badge';
+  const metresPerMm = layout ? area.widthM / layout.window.w : 0;
+  const mapInfo = useMemo(
+    () => (needsMap && metresPerMm > 0 ? { metresPerMm, bearing: area.bearing } : null),
+    [needsMap, metresPerMm, area.bearing],
+  );
+  const { artwork, error: labelError } = useLabelArtwork(layout, label, customFontId, mapInfo);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -266,38 +274,23 @@ function Overlay(props: { layout: Layout; frame: Frame; width: number; height: n
   const { layout, frame, width, height, artwork } = props;
   const s = frame.scale;
   const outside = `M${-frame.ox / s},${-frame.oy / s}h${width / s}v${height / s}h${-width / s}Z`;
-  const rings = artwork ? artwork.text.rings.map((r) => polylineD(r, true)).join('') : '';
-  const strokes = artwork ? artwork.text.strokes.map((p) => polylineD(p)).join('') : '';
+  const broken = artwork?.borderBreaks.length ? `url(#${BREAK_MASK})` : undefined;
   return (
     <svg className="map-overlay" width={width} height={height}>
       <g transform={`translate(${frame.ox} ${frame.oy}) scale(${s})`}>
+        <BorderBreakMask artwork={artwork} canvas={layout.canvas} />
         <path d={outside + shapePathD(layout.canvas, true)} fill="rgba(40,40,40,0.35)" />
         <path d={bandPathD(layout.canvas, layout.window)} fill="rgba(255,255,255,0.82)" />
-        {layout.thickBand ? (
-          <path d={bandPathD(layout.thickBand.outer, layout.thickBand.inner)} fill="rgba(0,0,0,0.45)" />
-        ) : null}
-        {layout.thinLine ? (
-          <path d={shapePathD(layout.thinLine)} fill="none" stroke="rgba(0,0,0,0.5)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-        ) : null}
+        <g mask={broken}>
+          {layout.thickBand ? (
+            <path d={bandPathD(layout.thickBand.outer, layout.thickBand.inner)} fill="rgba(0,0,0,0.45)" />
+          ) : null}
+          {layout.thinLine ? (
+            <path d={shapePathD(layout.thinLine)} fill="none" stroke="rgba(0,0,0,0.5)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+          ) : null}
+        </g>
         <path d={shapePathD(layout.canvas)} fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-        {artwork ? (
-          <g>
-            <rect
-              x={artwork.knockout[0]}
-              y={artwork.knockout[1]}
-              width={artwork.knockout[2]}
-              height={artwork.knockout[3]}
-              fill="rgba(255,255,255,0.88)"
-            />
-            {artwork.frame.map((seg, i) => (
-              <path key={i} d={polylineD(seg)} stroke="rgba(0,0,0,0.6)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
-            ))}
-            {rings ? <path d={rings} fill="rgba(0,0,0,0.75)" fillRule="nonzero" /> : null}
-            {strokes ? (
-              <path d={strokes} fill="none" stroke="rgba(0,0,0,0.75)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
-            ) : null}
-          </g>
-        ) : null}
+        {artwork ? <TitleOverlay artwork={artwork} windowD={shapePathD(layout.window)} /> : null}
       </g>
     </svg>
   );

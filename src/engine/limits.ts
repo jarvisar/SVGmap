@@ -86,6 +86,9 @@ export const LIMITS: Record<string, Limit> = {
   'label.borderWidth': { min: 0.01, max: 5 },
   'label.gap': { min: 0, max: 50 },
   'label.textScale': { min: 0.1, max: 1 },
+  'label.ribbonArch': { min: 0, max: 100 },
+  'label.badgeDiameter': { min: 10, max: 300 },
+  'label.lettersGap': { min: 0, max: 10 },
 };
 
 function limitKey(path: readonly string[]): string[] {

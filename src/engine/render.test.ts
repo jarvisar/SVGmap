@@ -13,7 +13,9 @@ import { toSvg } from './svg/writer.ts';
 import { type HersheyFile, parseHershey } from './text/hershey.ts';
 import { parseOutlineFont } from './text/loadFont.ts';
 import { acceptPolygon } from './tiles/schema.ts';
-import { areaMm2, intersectWith, resolveSurfaces, unionAll } from './fills.ts';
+import { areaMm2, intersectWith, makeFillTester, resolveSurfaces, toPath64, unionAll } from './fills.ts';
+import type { OutputGroup, RenderResult } from './result.ts';
+import { buildLabel } from './text/label.ts';
 
 const tile = new Uint8Array(readFileSync(new URL('./fixtures/vancouver-14-2589-5606.pbf', import.meta.url)));
 const centre = worldToLonLat(2589.5 * TILE_EXTENT, 5606.5 * TILE_EXTENT, 14);
@@ -183,6 +185,54 @@ describe('rendering a real tile', () => {
           expect(Math.hypot(Number(x) - 50, Number(y) - 50)).toBeLessThanOrEqual(50.001);
         }
       }
+    }
+  });
+});
+
+describe('title styles in a render', () => {
+  const bytes = readFileSync('public/fonts/Montserrat-SemiBold.ttf');
+  const montserrat = parseOutlineFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const fonts = { title: montserrat, subtitle: montserrat };
+  const withLabel = (mode: OutputMode, label: Partial<RenderSettings['label']>) =>
+    render(mode, { label: { ...defaultRenderSettings(mode).label, ...label } }, fonts).result;
+  const group = (result: RenderResult, id: string) => result.groups.find((g) => g.id === id);
+  const points = (g: OutputGroup | undefined) =>
+    (g?.paths ?? []).flatMap((p) => [...p.d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map(([, x, y]): [number, number] => [Number(x), Number(y)]));
+
+  it('leaves the letters bare on a solid box', () => {
+    const outlined = group(withLabel('laser', { style: 'box' }), 'text')!;
+    const solid = group(withLabel('laser', { style: 'box', solid: true }), 'text')!;
+    const frame = group(withLabel('laser', { style: 'box', solid: true }), 'frame');
+    expect(frame).toBeUndefined();
+    // The plate minus the letters is much more than the letters alone.
+    expect(solid.areaMm2).toBeGreaterThan(outlined.areaMm2 * 1.5);
+  });
+
+  it('keeps the map out of the big letters and the gap around them', () => {
+    const result = withLabel('laser', { style: 'letters', lettersGap: 1 });
+    const letters = group(result, 'text')!;
+    expect(letters.areaMm2).toBeGreaterThan(500);
+    const layout = computeLayout(defaultRenderSettings('laser').product, defaultRenderSettings('laser').border);
+    const { artwork } = buildLabel(layout, { ...defaultRenderSettings('laser').label, text: 'VANCOUVER', style: 'letters', lettersGap: 1 }, montserrat, montserrat);
+    const inside = makeFillTester([unionAll(artwork!.clear.map(toPath64))])!;
+    expect(points(group(result, 'roads')).filter((p) => inside(p))).toEqual([]);
+  });
+
+  it('only draws the map inside the letters when asked', () => {
+    const around = withLabel('laser', { style: 'letters' });
+    const within = withLabel('laser', { style: 'letters', lettersMode: 'window' });
+    expect(group(within, 'buildings')!.areaMm2).toBeLessThan(group(around, 'buildings')!.areaMm2 * 0.6);
+    expect(group(within, 'text')).toBeUndefined();
+    expect(group(within, 'frame')!.label).toBe('Letter outlines');
+  });
+
+  it('breaks the border lines around an in-border title', () => {
+    for (const mode of ['laser', 'plotter'] as const) {
+      const plain = withLabel(mode, { style: 'box' });
+      const broken = withLabel(mode, { style: 'inset' });
+      // One loop for the plain border, cut into pieces around the title and subtitle.
+      expect(group(broken, 'border')!.subpaths).toBeGreaterThan(group(plain, 'border')!.subpaths);
+      expect(group(broken, 'band')).toBeDefined();
     }
   });
 });

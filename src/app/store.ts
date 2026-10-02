@@ -18,7 +18,7 @@ import type { LabelSettings } from '../engine/text/label.ts';
 import { fontFingerprint } from '../engine/text/fonts.ts';
 import type { CustomFont } from '../engine/text/loadFont.ts';
 import type { FeatureFilters } from '../engine/tiles/schema.ts';
-import { type CleanupPreset, type LaserPalette, type Settings, cleanupForPreset, defaultSettings, mergeSettings } from './settings.ts';
+import { type CleanupPreset, type LaserPalette, type Settings, cleanupForPreset, defaultSettings, mergeSettings, migrateSettings } from './settings.ts';
 
 export type View = 'map' | 'preview';
 export type PreviewLook = 'material' | 'colors';
@@ -188,7 +188,8 @@ export const useApp = create<AppState>()(
     }),
     {
       name: 'svgmap-settings',
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => migrateSettings(persisted, version) as AppState,
       partialize: (s) => {
         const { view: _view, ...rest } = s;
         void _view;

@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
+import { type LabelPreset, applyLabelPreset, formatCoordinates } from '../../engine/presets.ts';
 import type { FillMode } from '../../engine/settings.ts';
 import { CUSTOM_FONT_ID, FONTS, fontInfo } from '../../engine/text/fonts.ts';
-import type { LabelPosition, LabelSettings } from '../../engine/text/label.ts';
+import type { LabelPosition, LabelSettings, LabelStyle } from '../../engine/text/label.ts';
 import { Check, Disclosure, Field, NumberField, Section, Segmented, SelectField, Slider, TextField } from '../components/controls.tsx';
 import { checkFont, storeFont } from '../customFont.ts';
 import { useApp } from '../store.ts';
+import { PresetPicker, STYLE_NAMES, StylePicker } from './TitleLooks.tsx';
 
 const POSITIONS: { value: LabelPosition; label: string }[] = [
   { value: 'lower_right', label: 'Bottom right' },
@@ -13,6 +15,7 @@ const POSITIONS: { value: LabelPosition; label: string }[] = [
   { value: 'upper_right', label: 'Top right' },
   { value: 'upper_left', label: 'Top left' },
   { value: 'upper_center', label: 'Top centre' },
+  { value: 'center', label: 'Centre' },
 ];
 
 const LETTERING: Record<FillMode, string> = {
@@ -21,6 +24,11 @@ const LETTERING: Record<FillMode, string> = {
   hatch: 'Hatched',
   'hatch-outline': 'Hatched with outline',
 };
+
+// Styles that draw the subtitle.
+const SUBTITLED: LabelStyle[] = ['band', 'badge', 'inset', 'legend'];
+// Styles placed in a corner.
+const CORNERED: LabelStyle[] = ['box', 'ribbon', 'badge', 'legend'];
 
 const LOAD_FONT = '__load';
 
@@ -33,10 +41,6 @@ function fontOptions(customName: string | null) {
   if (customName) options.push({ value: CUSTOM_FONT_ID, label: customName, group: 'Your font' });
   options.push({ value: LOAD_FONT, label: 'Load a font file…', group: 'Your font' });
   return options;
-}
-
-function coordinates(lat: number, lon: number) {
-  return `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
 }
 
 export function TitlePanel() {
@@ -75,52 +79,91 @@ export function TitlePanel() {
   };
   const subtitleFromCoordinates = () => {
     const { lat, lon } = useApp.getState().area;
-    set({ subtitle: coordinates(lat, lon) });
+    set({ subtitle: formatCoordinates(lat, lon, label.style === 'badge') });
+  };
+  const applyPreset = (preset: LabelPreset) => {
+    const { area } = useApp.getState();
+    setFontError('');
+    set(applyLabelPreset(preset, label, area.lat, area.lon));
   };
 
-  const band = label.style === 'band';
+  const kind = label.style;
+  const mapInLetters = kind === 'letters' && label.lettersMode === 'window';
   const fillModes: FillMode[] = mode === 'plotter' ? ['outline', 'hatch', 'hatch-outline'] : ['fill', 'outline', 'hatch', 'hatch-outline'];
   const letteringMode = mode === 'plotter' && style.fillModes.text === 'fill' ? 'hatch-outline' : style.fillModes.text;
   const singleLine = fontInfo(label.font)?.kind === 'stroke';
+  const solidHint = 'Engraves the shape and leaves the letters bare.';
 
   return (
-    <Section title="Title" summary={label.enabled && label.text.trim() ? label.text : 'Off'}>
+    <Section title="Title" summary={label.enabled && label.text.trim() ? `${label.text} (${STYLE_NAMES[kind].toLowerCase()})` : 'Off'}>
       <Check label="Show a title" checked={label.enabled} onChange={(enabled) => set({ enabled })} />
       {label.enabled ? (
         <>
           <TextField label="Text" value={label.text} onChange={(text) => set({ text })} />
           <Field label="Style">
-            <Segmented<'box' | 'band'>
-              label="Style"
-              value={label.style}
-              options={[
-                { value: 'box', label: 'Box' },
-                { value: 'band', label: 'Band' },
-              ]}
-              onChange={(value) => set({ style: value })}
-            />
+            <StylePicker value={kind} onChange={(value) => set({ style: value })} />
           </Field>
-          {band ? (
+          <Field label="Presets" hint="Sets the style, fonts and options. The title stays as it is.">
+            <PresetPicker onPick={applyPreset} />
+          </Field>
+          {SUBTITLED.includes(kind) ? (
             <>
-              <TextField label="Subtitle" value={label.subtitle} placeholder="Optional" onChange={(subtitle) => set({ subtitle })} />
+              <TextField
+                label="Subtitle"
+                value={label.subtitle}
+                placeholder="Optional"
+                onChange={(subtitle) => set({ subtitle })}
+              />
               <button type="button" className="btn btn-small" style={{ marginTop: 6 }} onClick={subtitleFromCoordinates}>
                 Use the coordinates
               </button>
+            </>
+          ) : null}
+
+          {CORNERED.includes(kind) ? (
+            <SelectField<LabelPosition> label="Position" value={label.position} options={POSITIONS} onChange={(position) => set({ position })} />
+          ) : null}
+          {kind === 'band' || kind === 'inset' ? (
+            <Field label="Position" hint={kind === 'inset' ? 'The subtitle goes in the border on the other side.' : undefined}>
+              <Segmented<'top' | 'bottom'>
+                label="Position"
+                value={label.bandPosition}
+                options={[
+                  { value: 'top', label: 'Top' },
+                  { value: 'bottom', label: 'Bottom' },
+                ]}
+                onChange={(bandPosition) => set({ bandPosition })}
+              />
+            </Field>
+          ) : null}
+          {kind === 'letters' ? (
+            <>
+              <Field label="Map">
+                <Segmented<LabelSettings['lettersMode']>
+                  label="Map"
+                  value={label.lettersMode}
+                  options={[
+                    { value: 'cutout', label: 'Around the letters' },
+                    { value: 'window', label: 'Inside the letters' },
+                  ]}
+                  onChange={(lettersMode) => set({ lettersMode })}
+                />
+              </Field>
               <Field label="Position">
-                <Segmented<'top' | 'bottom'>
-                  label="Band position"
-                  value={label.bandPosition}
+                <Segmented<LabelSettings['lettersAlign']>
+                  label="Position"
+                  value={label.lettersAlign}
                   options={[
                     { value: 'top', label: 'Top' },
+                    { value: 'center', label: 'Middle' },
                     { value: 'bottom', label: 'Bottom' },
                   ]}
-                  onChange={(bandPosition) => set({ bandPosition })}
+                  onChange={(lettersAlign) => set({ lettersAlign })}
                 />
               </Field>
             </>
-          ) : (
-            <SelectField<LabelPosition> label="Position" value={label.position} options={POSITIONS} onChange={(position) => set({ position })} />
-          )}
+          ) : null}
+
           <SelectField label="Font" value={label.font} options={fontOptions(customFontName)} onChange={(id) => chooseFont('font', id)} />
           {fontError ? <div className="notice error">{fontError}</div> : null}
           <input
@@ -134,33 +177,18 @@ export function TitlePanel() {
             }}
           />
           <Slider label="Size" value={label.size} min={40} max={250} step={5} unit="%" onChange={(size) => set({ size })} />
-          <SelectField<FillMode>
-            label="Lettering"
-            value={letteringMode}
-            options={fillModes.map((m) => ({ value: m, label: LETTERING[m] }))}
-            onChange={(m) => setStyle({ fillModes: { ...style.fillModes, text: m } })}
-            hint={singleLine ? 'Single-line fonts are always drawn as strokes.' : undefined}
-          />
+          <Slider label="Letter spacing" value={label.titleSpacing} min={80} max={200} step={5} scale={100} unit="%" onChange={(titleSpacing) => set({ titleSpacing })} />
+          {mapInLetters ? null : (
+            <SelectField<FillMode>
+              label="Lettering"
+              value={letteringMode}
+              options={fillModes.map((m) => ({ value: m, label: LETTERING[m] }))}
+              onChange={(m) => setStyle({ fillModes: { ...style.fillModes, text: m } })}
+              hint={singleLine ? 'Single-line fonts are always drawn as strokes.' : undefined}
+            />
+          )}
 
-          {band ? (
-            <>
-              <Slider label="Band height" value={label.bandHeight} min={5} max={50} step={1} unit="%" onChange={(bandHeight) => set({ bandHeight })} />
-              <Field label="Alignment">
-                <Segmented<'left' | 'center' | 'right'>
-                  label="Alignment"
-                  value={label.bandAlign}
-                  options={[
-                    { value: 'left', label: 'Left' },
-                    { value: 'center', label: 'Centre' },
-                    { value: 'right', label: 'Right' },
-                  ]}
-                  onChange={(bandAlign) => set({ bandAlign })}
-                />
-              </Field>
-              <Slider label="Letter spacing" value={label.titleSpacing} min={80} max={200} step={5} scale={100} unit="%" onChange={(titleSpacing) => set({ titleSpacing })} />
-              <Check label="Divider line" checked={label.divider} onChange={(divider) => set({ divider })} />
-            </>
-          ) : (
+          {kind === 'box' ? (
             <>
               <Field label="Rotation">
                 <Segmented<'0' | '90' | '180' | '270'>
@@ -175,12 +203,76 @@ export function TitlePanel() {
                   onChange={(r) => set({ rotation: Number(r) as LabelSettings['rotation'] })}
                 />
               </Field>
+              <Check label="Box outline" checked={label.boxBorder} disabled={label.solid} onChange={(boxBorder) => set({ boxBorder })} />
+              <Check label="Solid box" title={solidHint} checked={label.solid} onChange={(solid) => set({ solid })} />
+            </>
+          ) : null}
+          {kind === 'band' ? (
+            <>
+              <Slider label="Band height" value={label.bandHeight} min={5} max={50} step={1} unit="%" onChange={(bandHeight) => set({ bandHeight })} />
+              <Field label="Alignment">
+                <Segmented<'left' | 'center' | 'right'>
+                  label="Alignment"
+                  value={label.bandAlign}
+                  options={[
+                    { value: 'left', label: 'Left' },
+                    { value: 'center', label: 'Centre' },
+                    { value: 'right', label: 'Right' },
+                  ]}
+                  onChange={(bandAlign) => set({ bandAlign })}
+                />
+              </Field>
+              <Check label="Divider line" checked={label.divider} onChange={(divider) => set({ divider })} />
+              <Check label="Rule under the title" checked={label.ornament} onChange={(ornament) => set({ ornament })} />
+            </>
+          ) : null}
+          {kind === 'ribbon' ? (
+            <>
+              <Slider label="Arch" value={label.ribbonArch} min={0} max={100} step={5} unit="%" onChange={(ribbonArch) => set({ ribbonArch })} />
+              <Check label="Solid ribbon" title={solidHint} checked={label.solid} onChange={(solid) => set({ solid })} />
+            </>
+          ) : null}
+          {kind === 'badge' ? (
+            <>
+              <Field label="Middle" hint={label.badgeCentre === 'compass' ? 'The compass points to true north as the map turns.' : undefined}>
+                <Segmented<LabelSettings['badgeCentre']>
+                  label="Middle"
+                  value={label.badgeCentre}
+                  options={[
+                    { value: 'compass', label: 'Compass' },
+                    { value: 'map', label: 'Map' },
+                  ]}
+                  onChange={(badgeCentre) => set({ badgeCentre })}
+                />
+              </Field>
+              <Check label="Solid ring" title={solidHint} checked={label.solid} onChange={(solid) => set({ solid })} />
+            </>
+          ) : null}
+          {kind === 'letters' && !mapInLetters ? (
+            <NumberField label="Gap around the letters" value={label.lettersGap} min={0} max={10} step={0.1} unit="mm" onChange={(lettersGap) => set({ lettersGap })} />
+          ) : null}
+          {kind === 'letters' && mapInLetters && singleLine ? <div className="notice">Pick an outline font to show the map inside the letters.</div> : null}
+          {kind === 'legend' ? (
+            <>
+              <Field label="Units">
+                <Segmented<LabelSettings['legendUnits']>
+                  label="Units"
+                  value={label.legendUnits}
+                  options={[
+                    { value: 'metric', label: 'Metric' },
+                    { value: 'imperial', label: 'Imperial' },
+                  ]}
+                  onChange={(legendUnits) => set({ legendUnits })}
+                />
+              </Field>
+              <Check label="Scale bar" checked={label.legendScale} onChange={(legendScale) => set({ legendScale })} />
+              <Check label="North arrow" checked={label.legendNorth} onChange={(legendNorth) => set({ legendNorth })} />
               <Check label="Box outline" checked={label.boxBorder} onChange={(boxBorder) => set({ boxBorder })} />
             </>
-          )}
+          ) : null}
 
           <Disclosure label="Measurements">
-            {band ? (
+            {kind === 'band' ? (
               <>
                 <div className="row">
                   <NumberField label="Title height" value={label.titleHeight} min={0.5} max={100} step={0.1} unit="mm" onChange={(titleHeight) => set({ titleHeight })} />
@@ -188,24 +280,15 @@ export function TitlePanel() {
                 </div>
                 <div className="row">
                   <NumberField label="Subtitle height" value={label.subtitleHeight} min={0.5} max={50} step={0.1} unit="mm" onChange={(subtitleHeight) => set({ subtitleHeight })} />
-                  <NumberField label="Subtitle gap" value={label.subtitleGap} min={0} max={50} step={0.1} unit="mm" onChange={(subtitleGap) => set({ subtitleGap })} />
+                  <NumberField label="Line gap" value={label.subtitleGap} min={0} max={50} step={0.1} unit="mm" onChange={(subtitleGap) => set({ subtitleGap })} />
                 </div>
                 <div className="row">
                   <NumberField label="Padding (sides)" value={label.bandPaddingX} min={0} max={50} step={0.1} unit="mm" onChange={(bandPaddingX) => set({ bandPaddingX })} />
                   <NumberField label="Padding (top, bottom)" value={label.bandPaddingY} min={0} max={50} step={0.1} unit="mm" onChange={(bandPaddingY) => set({ bandPaddingY })} />
                 </div>
-                <div className="row">
-                  <NumberField label="Subtitle spacing" value={label.subtitleSpacing} min={80} max={300} step={5} scale={100} unit="%" onChange={(subtitleSpacing) => set({ subtitleSpacing })} />
-                  <NumberField label="Divider width" value={label.dividerWidth} min={0.01} max={3} step={0.05} unit="mm" onChange={(dividerWidth) => set({ dividerWidth })} />
-                </div>
-                <SelectField
-                  label="Subtitle font"
-                  value={label.subtitleFont || ''}
-                  options={[{ value: '', label: 'Same as the title', group: '' }, ...fontOptions(customFontName)]}
-                  onChange={(id) => chooseFont('subtitleFont', id)}
-                />
+                <NumberField label="Divider width" value={label.dividerWidth} min={0.01} max={3} step={0.05} unit="mm" onChange={(dividerWidth) => set({ dividerWidth })} />
               </>
-            ) : (
+            ) : kind === 'box' ? (
               <>
                 <div className="row">
                   <NumberField label="Text height" value={label.textHeight} min={0.5} max={100} step={0.1} unit="mm" onChange={(textHeight) => set({ textHeight })} />
@@ -221,7 +304,32 @@ export function TitlePanel() {
                 </div>
                 <NumberField label="Text size in box" value={label.textScale} min={10} max={100} step={1} scale={100} unit="%" onChange={(textScale) => set({ textScale })} />
               </>
+            ) : (
+              <>
+                <div className="row">
+                  {kind === 'badge' ? (
+                    <NumberField label="Diameter" value={label.badgeDiameter} min={10} max={300} step={1} unit="mm" onChange={(badgeDiameter) => set({ badgeDiameter })} />
+                  ) : kind === 'letters' ? null : (
+                    <NumberField label="Text height" value={label.textHeight} min={0.5} max={100} step={0.1} unit="mm" onChange={(textHeight) => set({ textHeight })} />
+                  )}
+                  <NumberField label="Line width" value={label.borderWidth} min={0.01} max={5} step={0.05} unit="mm" onChange={(borderWidth) => set({ borderWidth })} />
+                </div>
+                {CORNERED.includes(kind) ? (
+                  <NumberField label="Gap from border" value={label.gap} min={0} max={50} step={0.1} unit="mm" onChange={(gap) => set({ gap })} />
+                ) : null}
+              </>
             )}
+            {SUBTITLED.includes(kind) ? (
+              <>
+                <NumberField label="Subtitle spacing" value={label.subtitleSpacing} min={80} max={300} step={5} scale={100} unit="%" onChange={(subtitleSpacing) => set({ subtitleSpacing })} />
+                <SelectField
+                  label="Subtitle font"
+                  value={label.subtitleFont || ''}
+                  options={[{ value: '', label: 'Same as the title', group: '' }, ...fontOptions(customFontName)]}
+                  onChange={(id) => chooseFont('subtitleFont', id)}
+                />
+              </>
+            ) : null}
           </Disclosure>
         </>
       ) : null}
