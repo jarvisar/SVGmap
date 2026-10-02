@@ -11,6 +11,7 @@ coverage/
 .DS_Store
 Thumbs.db
 *.log
+.qa
 
 # Local scratch left behind by the Python/Blender pipeline this repository was
 # copied from. None of it is part of the web app, and all of it is safe to delete.
