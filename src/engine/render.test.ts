@@ -297,6 +297,19 @@ describe('pins and text in a render', () => {
     expect(group(result, 'mark-m0-lines')).toMatchObject({ kind: 'stroke', label: 'Pin: HI' });
   });
 
+  it('hatches each mark with its own spacing', () => {
+    const lines = (spacing: number) => group(withMarks('laser', [{ shape: 'dot', size: 12, fill: 'hatch', hatch: { spacing, angle: 0, cross: false } }]), 'mark-m0')!.subpaths;
+    expect(lines(0.3)).toBeGreaterThan(lines(1.2) * 3);
+  });
+
+  it('gives the text its own layer when it is drawn differently from the shape', () => {
+    const same = withMarks('laser', [{ shape: 'heart', text: 'HOME', font: 'montserrat', fill: 'hatch' }]);
+    expect(group(same, 'mark-m0-text')).toBeUndefined();
+    const split = withMarks('laser', [{ shape: 'heart', text: 'HOME', font: 'montserrat', fill: 'hatch', textFill: 'fill' }]);
+    expect(group(split, 'mark-m0')).toMatchObject({ kind: 'stroke', label: 'Heart: HOME' });
+    expect(group(split, 'mark-m0-text')).toMatchObject({ kind: 'fill', label: 'Heart: HOME (text)' });
+  });
+
   it('warns about a mark off the map', () => {
     const result = withMarks('laser', [{ shape: 'pin', text: 'FAR', lon: centre.lon + 1 }]);
     expect(group(result, 'mark-m0')).toBeUndefined();

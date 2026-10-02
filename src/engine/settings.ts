@@ -35,8 +35,8 @@ export const LAYER_NAMES: Record<LayerId, string> = {
 // 'contour' is rings following the edge in, one hatch spacing apart.
 export type FillMode = 'fill' | 'outline' | 'hatch' | 'hatch-outline' | 'contour';
 
-// Pins and text share one hatch, set per mode like the layers'.
-export type HatchKey = FillLayerId | 'text' | 'route' | 'marks';
+// Pins and text have their own, on each mark.
+export type HatchKey = FillLayerId | 'text' | 'route';
 
 export type ElementId = LayerId | 'route' | 'text' | 'subtitle' | 'frame' | 'border' | 'band' | 'cut';
 
@@ -285,7 +285,6 @@ export const DEFAULT_HATCH: Record<HatchKey, HatchSettings> = {
   buildings: hatch(0.7, 45),
   text: hatch(0.3, 45),
   route: hatch(0.3, 45),
-  marks: hatch(0.3, 45),
 };
 
 // A laser line needs about one kerf. A pen stroke needs its own width plus a gap.

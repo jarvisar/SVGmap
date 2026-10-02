@@ -1,8 +1,21 @@
 // Everything about one pin or bit of text. The same form is in the preview's
 // card and in the sidebar, so a mark can be set up without a mouse too.
 import { useEffect, useId, useRef, useState } from 'react';
-import { type MapMark, MARK_RANGES, type MarkFill, type MarkSide, hasText, markName, markText } from '../../engine/marks/marks.ts';
+import {
+  type MapMark,
+  MARK_RANGES,
+  type MarkAlign,
+  type MarkFill,
+  type MarkSide,
+  hasText,
+  markFont,
+  markName,
+  markText,
+  markTextFill,
+  textBeside,
+} from '../../engine/marks/marks.ts';
 import { MARK_SHAPES, SHAPE_ORDER } from '../../engine/marks/shapes.ts';
+import { fontInfo } from '../../engine/text/fonts.ts';
 import { ColorInput, Check, Disclosure, Field, NumberField, Segmented, Select, SelectField, Slider } from '../components/controls.tsx';
 import { MarkIcon } from '../components/MarkIcon.tsx';
 import { PlaceholderMenu, PlaceholderPreview, withToken } from '../components/Placeholders.tsx';
@@ -10,10 +23,17 @@ import { type Place, searchPlaces } from '../geocode.ts';
 import { duplicateMark, markSpot, pieceLayout, removeMark, setMarkAnchor, updateMark, useMarkUi } from '../marks.ts';
 import { useApp } from '../store.ts';
 import { asChange } from '../undo.ts';
-import { fillModesFor } from './LayersPanel.tsx';
+import { HatchFields, fillModesFor, hatchOptionsFor } from './LayersPanel.tsx';
 import { fontOptions } from './TitlePanel.tsx';
 
 const FILL_LABELS: Record<MarkFill, string> = { fill: 'Filled', outline: 'Outline', hatch: 'Hatched', 'hatch-outline': 'Hatched with outline', contour: 'Contours' };
+
+const ALIGNS: { value: MarkAlign; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'left', label: 'Left' },
+  { value: 'center', label: 'Centre' },
+  { value: 'right', label: 'Right' },
+];
 
 const SIDES: { value: MarkSide; label: string }[] = [
   { value: 'right', label: 'Right' },
@@ -160,6 +180,7 @@ export function MarkEditor(props: { mark: MapMark }) {
   const { mark } = props;
   const mode = useApp((s) => s.mode);
   const titleColor = useApp((s) => s.styles[s.mode].colors.text);
+  const titleFont = useApp((s) => s.label.font);
   const customFontName = useApp((s) => s.customFontName);
   const focusText = useMarkUi((s) => s.focusText);
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -176,8 +197,19 @@ export function MarkEditor(props: { mark: MapMark }) {
 
   const typed = hasText(mark);
   const fills: MarkFill[] = fillModesFor(mode);
-  const fill = mode === 'plotter' && mark.fill === 'fill' ? 'hatch-outline' : mark.fill;
+  // A plotter draws "fill" as hatching with an outline.
+  const shown = (f: MarkFill): MarkFill => (mode === 'plotter' && f === 'fill' ? 'hatch-outline' : f);
+  const fill = shown(mark.fill);
   const fonts = [{ value: '', label: 'Same as the title', group: '' }, ...fontOptions(customFontName, false)];
+  const singleLine = typed && fontInfo(markFont(mark, titleFont))?.kind === 'stroke';
+  const textFillShown = textBeside(mark) && !singleLine;
+  // Single-line letters are strokes and aren't hatched. Letters inside the shape are cut out of it.
+  const hatching = [
+    mark.shape !== 'none' ? hatchOptionsFor(fill) : null,
+    typed && !singleLine && mark.side !== 'inside' ? hatchOptionsFor(shown(markTextFill(mark))) : null,
+  ];
+  const hatchShown = hatching.includes('all') ? 'all' : hatching.includes('spacing') ? 'spacing' : null;
+  const lines = mark.text.split('\n').filter((l) => l.trim()).length;
 
   return (
     <div className="mark-editor">
@@ -206,7 +238,22 @@ export function MarkEditor(props: { mark: MapMark }) {
           <Segmented<MarkSide> label="Text goes" value={mark.side} options={SIDES} onChange={(side) => set({ side })} />
         </Field>
       ) : null}
-      <Field label="Look" hint={mark.color ? undefined : 'In the title colour.'}>
+      {textBeside(mark) ? (
+        <NumberField
+          label="Gap to the text"
+          value={mark.textGap}
+          scale={mark.textSize}
+          min={MARK_RANGES.textGap.min * mark.textSize}
+          max={MARK_RANGES.textGap.max * mark.textSize}
+          step={0.1}
+          unit="mm"
+          onChange={(textGap) => set({ textGap })}
+        />
+      ) : null}
+      <Field
+        label="Look"
+        hint={mark.shape === 'none' && singleLine ? 'Single-line fonts are always drawn as strokes.' : mark.color ? undefined : 'In the title colour.'}
+      >
         <div className="route-style">
           <ColorInput label="Colour" value={mark.color || titleColor} onChange={(color) => set({ color })} />
           <Select<MarkFill> label="Drawn as" value={fill} options={fills.map((value) => ({ value, label: FILL_LABELS[value] }))} onChange={(f) => set({ fill: f })} />
@@ -217,6 +264,15 @@ export function MarkEditor(props: { mark: MapMark }) {
           </button>
         ) : null}
       </Field>
+      {textFillShown ? (
+        <SelectField<MarkFill | ''>
+          label="Text drawn as"
+          value={mark.textFill && shown(mark.textFill)}
+          options={[{ value: '', label: 'Same as the shape' }, ...fills.map((value) => ({ value, label: FILL_LABELS[value] }))]}
+          onChange={(textFill) => set({ textFill })}
+        />
+      ) : null}
+      {hatchShown ? <HatchFields value={mark.hatch} spacingOnly={hatchShown === 'spacing'} onChange={(patch) => set({ hatch: { ...mark.hatch, ...patch } })} /> : null}
       {mark.shape !== 'none' ? (
         <Slider label="Size" value={mark.size} min={2} max={40} step={0.5} limits={MARK_RANGES.size} unit="mm" onChange={(size) => set({ size })} />
       ) : null}
@@ -224,6 +280,35 @@ export function MarkEditor(props: { mark: MapMark }) {
         <>
           <Slider label="Text size" value={mark.textSize} min={1} max={15} step={0.25} limits={MARK_RANGES.textSize} unit="mm" onChange={(textSize) => set({ textSize })} />
           <SelectField label="Font" value={mark.font} options={fonts} onChange={(font) => set({ font })} />
+          <Slider
+            label="Letter spacing"
+            value={mark.letterSpacing}
+            min={80}
+            max={200}
+            step={5}
+            limits={{ min: MARK_RANGES.letterSpacing.min * 100, max: MARK_RANGES.letterSpacing.max * 100 }}
+            scale={100}
+            unit="%"
+            onChange={(letterSpacing) => set({ letterSpacing })}
+          />
+          {lines > 1 ? (
+            <>
+              <Slider
+                label="Line spacing"
+                value={mark.lineSpacing}
+                min={70}
+                max={250}
+                step={5}
+                limits={{ min: MARK_RANGES.lineSpacing.min * 100, max: MARK_RANGES.lineSpacing.max * 100 }}
+                scale={100}
+                unit="%"
+                onChange={(lineSpacing) => set({ lineSpacing })}
+              />
+              <Field label="Lines line up" hint={mark.align === 'auto' ? 'On the side next to the shape, or centred.' : undefined}>
+                <Segmented<MarkAlign> label="Lines line up" value={mark.align} options={ALIGNS} onChange={(align) => set({ align })} />
+              </Field>
+            </>
+          ) : null}
         </>
       ) : null}
       <Slider label="Turn" value={mark.rotation} min={-180} max={180} step={1} limits={MARK_RANGES.rotation} unit="°" onChange={(rotation) => set({ rotation })} />

@@ -64,6 +64,32 @@ describe('laying out a mark', () => {
     expect(Math.min(...xs)).toBeCloseTo(-10, 6);
   });
 
+  it('spreads the letters and lines as asked, and lines them up on any side', () => {
+    const width = (m: MapMark) => {
+      const xs = layoutMark(m, font).text.rings.flat().map((p) => p[0]);
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    const height = (m: MapMark) => {
+      const ys = layoutMark(m, font).text.rings.flat().map((p) => p[1]);
+      return Math.max(...ys) - Math.min(...ys);
+    };
+    const two = mark({ shape: 'none', text: 'WIDE LINE\nI', textSize: 4 });
+    expect(width({ ...two, letterSpacing: 1.5 })).toBeGreaterThan(width(two) * 1.3);
+    expect(height({ ...two, lineSpacing: 2 })).toBeCloseTo(height(two) + 4 * 1.6, 1);
+    const minX = (m: MapMark) => {
+      const art = layoutMark(m, font);
+      // The I is the last few rings, on the second line.
+      return Math.min(...art.text.rings.slice(-1).flat().map((p) => p[0]));
+    };
+    expect(minX({ ...two, align: 'left' })).toBeLessThan(minX(two) - 5);
+  });
+
+  it('keeps the gap to the text asked for', () => {
+    const left = (m: MapMark) => Math.min(...layoutMark(m, font).text.rings.flat().map((p) => p[0]));
+    const dot = mark({ shape: 'dot', size: 6, text: 'HI', textSize: 4, side: 'right' });
+    expect(left({ ...dot, textGap: 1 }) - left({ ...dot, textGap: 0 })).toBeCloseTo(4, 3);
+  });
+
   it('is empty with no shape and no text', () => {
     expect(layoutMark(mark({ shape: 'none', text: '  ' }), font).empty).toBe(true);
   });
@@ -102,6 +128,9 @@ describe('saved marks', () => {
     expect(marks[0]).toMatchObject({ shape: 'heart', text: 'a\nb\nc\nd', size: 150, color: '#FF0000', rotation: -90, side: 'right', clear: true });
     expect(marks[1]).toMatchObject({ shape: DEFAULT_MARK.shape, color: '', font: '', lat: 0, fill: 'fill' });
     expect(sanitizeMarks('nope')).toEqual([]);
+    expect(marks[1]).toMatchObject({ hatch: DEFAULT_MARK.hatch, textFill: '', letterSpacing: 1, lineSpacing: 1, align: 'auto' });
+    const tuned = sanitizeMarks([{ id: 'a', hatch: { spacing: 0, angle: 270, cross: 'yes' }, textFill: 'outline', letterSpacing: 9, align: 'justify' }])[0];
+    expect(tuned).toMatchObject({ hatch: { spacing: 0.1, angle: -90, cross: false }, textFill: 'outline', letterSpacing: 2, align: 'auto' });
   });
 
   it('wrap angles into -180 to 180', () => {

@@ -2,7 +2,7 @@
 // they're dragged or edited, their frames and handles, and the tools.
 import { type ReactNode, useEffect, useRef } from 'react';
 import { markLabel } from '../../engine/marks/draw.ts';
-import { type MapMark, markName } from '../../engine/marks/marks.ts';
+import { type MapMark, markName, markTextFill } from '../../engine/marks/marks.ts';
 import { MARK_SHAPES, type MarkShape, SHAPE_ORDER } from '../../engine/marks/shapes.ts';
 import { fmt, polylineD } from '../../engine/svg/format.ts';
 import { MarkIcon } from '../components/MarkIcon.tsx';
@@ -64,6 +64,8 @@ export function MarkDrawing(props: {
           const strokes = lines(art.text.strokes);
           const gap = mark.clear ? mark.gap : 0;
           const outline = mark.fill === 'outline';
+          const textFill = markTextFill(mark);
+          const textOutline = textFill === 'outline';
           const letterInk = art.inside ? paper : ink;
           const drawn = (
             <>
@@ -79,7 +81,13 @@ export function MarkDrawing(props: {
               {art.holes.length ? <path d={rings(art.holes)} fill={outline ? 'none' : paper} stroke={outline ? ink : 'none'} strokeWidth={width} /> : null}
               {art.extra.length ? <path d={rings(art.extra)} fill={outline ? 'none' : ink} stroke={outline ? ink : 'none'} strokeWidth={width} /> : null}
               {letters ? (
-                <path d={letters} fill={outline && !art.inside ? 'none' : letterInk} stroke={outline ? ink : 'none'} strokeWidth={width} />
+                <path
+                  d={letters}
+                  fill={textOutline && !art.inside ? 'none' : letterInk}
+                  fillOpacity={textFill === 'hatch' || textFill === 'contour' ? 0.75 : 1}
+                  stroke={textOutline ? ink : 'none'}
+                  strokeWidth={width}
+                />
               ) : null}
               {strokes ? <path d={strokes} fill="none" stroke={letterInk} strokeWidth={art.inside ? 0.4 : 0.3} /> : null}
             </>

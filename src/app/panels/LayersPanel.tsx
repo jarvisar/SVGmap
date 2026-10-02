@@ -9,6 +9,7 @@ import {
   type LineLayerId,
   type OutputMode,
 } from '../../engine/settings.ts';
+import type { HatchSettings } from '../../engine/plotter.ts';
 import type { FeatureFilters } from '../../engine/tiles/schema.ts';
 import { Check, ColorInput, NumberField, Section, Select } from '../components/controls.tsx';
 import { useApp } from '../store.ts';
@@ -134,13 +135,18 @@ function FilterChecks(props: { layer: LayerId }) {
   );
 }
 
-// Also used for the title lettering, the route band and the pins. Contours
-// only use the spacing, as the distance between rings.
+// Also used for the title lettering and the route band. Contours only use the
+// spacing, as the distance between rings.
 export function HatchOptions(props: { layer: HatchKey; spacingOnly?: boolean }) {
   const style = useApp((s) => s.styles[s.mode]);
   const setStyle = useApp((s) => s.setStyle);
   const h = style.hatch[props.layer];
-  const update = (patch: Partial<typeof h>) => setStyle({ hatch: { ...style.hatch, [props.layer]: { ...h, ...patch } } });
+  return <HatchFields value={h} spacingOnly={props.spacingOnly} onChange={(patch) => setStyle({ hatch: { ...style.hatch, [props.layer]: { ...h, ...patch } } })} />;
+}
+
+// The fields on their own, for the pins, which keep their hatch on each pin.
+export function HatchFields(props: { value: HatchSettings; spacingOnly?: boolean; onChange: (patch: Partial<HatchSettings>) => void }) {
+  const h = props.value;
   return (
     <>
       <div className="row">
@@ -150,11 +156,13 @@ export function HatchOptions(props: { layer: HatchKey; spacingOnly?: boolean }) 
           {...fieldRange('style.hatch.*.spacing')}
           step={0.05}
           unit="mm"
-          onChange={(spacing) => update({ spacing })}
+          onChange={(spacing) => props.onChange({ spacing })}
         />
-        {props.spacingOnly ? null : <NumberField label="Angle" value={h.angle} {...fieldRange('style.hatch.*.angle')} step={5} unit="°" onChange={(angle) => update({ angle })} />}
+        {props.spacingOnly ? null : (
+          <NumberField label="Angle" value={h.angle} {...fieldRange('style.hatch.*.angle')} step={5} unit="°" onChange={(angle) => props.onChange({ angle })} />
+        )}
       </div>
-      {props.spacingOnly ? null : <Check label="Cross-hatch" checked={h.cross} onChange={(cross) => update({ cross })} />}
+      {props.spacingOnly ? null : <Check label="Cross-hatch" checked={h.cross} onChange={(cross) => props.onChange({ cross })} />}
     </>
   );
 }

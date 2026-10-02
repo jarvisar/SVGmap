@@ -4,7 +4,6 @@ import { Field, Section } from '../components/controls.tsx';
 import { MarkIcon } from '../components/MarkIcon.tsx';
 import { MARK_IDEAS, addMark, removeMark, selectMark, startingMark, useMarkUi } from '../marks.ts';
 import { useApp } from '../store.ts';
-import { HatchOptions } from './LayersPanel.tsx';
 import { MarkEditor } from './MarkEditor.tsx';
 
 export function MarkIdeas() {
@@ -22,10 +21,7 @@ export function MarkIdeas() {
 
 export function MarksPanel() {
   const marks = useApp((s) => s.marks);
-  const mode = useApp((s) => s.mode);
   const selected = useMarkUi((s) => s.selected);
-  const hatched = marks.some((m) => m.fill === 'hatch' || m.fill === 'hatch-outline' || (mode === 'plotter' && m.fill === 'fill'));
-  const contoured = marks.some((m) => m.fill === 'contour');
   const summary = marks.length === 0 ? 'None' : marks.length === 1 ? markName(marks[0]) : `${marks.length} on the map`;
   return (
     <Section title="Pins & text" summary={summary}>
@@ -73,12 +69,6 @@ export function MarksPanel() {
             );
           })}
         </ul>
-      ) : null}
-      {hatched || contoured ? (
-        <>
-          <div className="subhead">{hatched ? 'Hatching' : 'Contours'}</div>
-          <HatchOptions layer="marks" spacingOnly={!hatched} />
-        </>
       ) : null}
     </Section>
   );

@@ -7,8 +7,9 @@ import { clipPolylineInside } from '../geo/clip.ts';
 import type { MapTransform } from '../geo/transform.ts';
 import { type Shape, shapePolygon } from '../layout/shapes.ts';
 import { type Path, pathLength } from '../lines/geometry.ts';
+import type { HatchSettings } from '../plotter.ts';
 import { type LoadedFont, missingGlyphs } from '../text/outline.ts';
-import { type MapMark, type MarkFill, hasText, layoutMark, markFont, markName, markPoint, placeMark } from './marks.ts';
+import { type MapMark, type MarkFill, hasText, layoutMark, markFont, markName, markPoint, markTextFill, placeMark } from './marks.ts';
 import { MARK_SHAPES } from './shapes.ts';
 
 export interface MarkPiece {
@@ -16,7 +17,12 @@ export interface MarkPiece {
   label: string;
   color: string;
   fill: MarkFill;
+  hatch: HatchSettings;
   area: Paths64;
+  // Outline letters beside the shape when they're drawn differently from it.
+  // Otherwise they're part of area.
+  textFill: MarkFill;
+  textArea: Paths64;
   // Single-line letters.
   strokes: Path[];
 }
@@ -64,21 +70,26 @@ export function drawMarks(
     const outer = unionAll([...placed.fill, ...placed.extra].map(toPath64));
     const shape = placed.holes.length ? unionAll([...subtract(unionAll(placed.fill.map(toPath64)), unionAll(placed.holes.map(toPath64))), ...unionAll(placed.extra.map(toPath64))]) : outer;
     let strokes = placed.text.strokes;
+    const textFill = markTextFill(mark);
     let area: Paths64;
+    let textArea: Paths64 = [];
     if (art.inside) {
       const cut = unionAll([...letters, ...bufferLines(strokes, Math.max(strokeWidth, 0.4) / 2, true)]);
       area = subtract(shape, cut);
       strokes = [];
+    } else if (textFill !== mark.fill) {
+      area = shape;
+      textArea = intersectWith(letters, windowClip);
     } else {
       area = letters.length ? unionAll([...shape, ...letters]) : shape;
     }
     area = intersectWith(area, windowClip);
     strokes = strokes.flatMap((s) => clipPolylineInside(s, windowPoly));
-    if (!area.length && !strokes.length) {
+    if (!area.length && !textArea.length && !strokes.length) {
       warnings.push(`“${name}” is outside the map. Move it or the map to show it.`);
       continue;
     }
-    pieces.push({ id: mark.id, label: markLabel(mark), color: mark.color || titleColor, fill: mark.fill, area, strokes });
+    pieces.push({ id: mark.id, label: markLabel(mark), color: mark.color || titleColor, fill: mark.fill, hatch: mark.hatch, area, textFill, textArea, strokes });
     if (mark.clear) {
       const footprint = unionAll([...outer, ...letters, ...bufferLines(placed.text.strokes, Math.max(strokeWidth, 0.3) / 2, true)]);
       clear.push(...(mark.gap > 0 ? dilate(footprint, mark.gap) : footprint));

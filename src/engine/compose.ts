@@ -22,7 +22,7 @@ import { cleanupLines } from './lines/cleanup.ts';
 import { lineCoverage } from './lines/coverage.ts';
 import { type LineItem, type Path, pathLength } from './lines/geometry.ts';
 import { weldPaths } from './lines/weld.ts';
-import { contourFill, contourLines, hatchWith, orderForPlotting, outlines } from './plotter.ts';
+import { type HatchSettings, contourFill, contourLines, hatchWith, orderForPlotting, outlines } from './plotter.ts';
 import type { Prepared, PreparedLine, PreparedPolygon } from './prepare.ts';
 import type { GroupElement, OutputGroup, OutputPath, PlotterStats, RenderResult } from './result.ts';
 import { buildRoutes, makeRouteClearer } from './routes/draw.ts';
@@ -32,7 +32,6 @@ import {
   FILL_LAYERS,
   type FillLayerId,
   type FillMode,
-  type HatchKey,
   LAYER_NAMES,
   LINE_LAYERS,
   type LineLayerId,
@@ -318,7 +317,7 @@ export function compose(
 
   // Groups
   const drafts: Draft[] = [];
-  const fillDraft = (id: string, element: GroupElement, name: string, paths: Paths64, mode: FillMode, hatchKey: HatchKey, color?: string) => {
+  const fillDraft = (id: string, element: GroupElement, name: string, paths: Paths64, mode: FillMode, h: HatchSettings, color?: string) => {
     if (paths.length === 0) return;
     const effective: FillMode = plotter && mode === 'fill' ? 'hatch-outline' : mode;
     if (effective === 'fill') {
@@ -327,7 +326,6 @@ export function compose(
     }
     // concat, not push(...), since fine hatching of a big area is more lines than a call can take.
     let lines: Path[] = [];
-    const h = style.hatch[hatchKey];
     if (effective === 'contour') lines = contourLines(paths, Math.max(h.spacing, 0.05));
     if (effective === 'hatch' || effective === 'hatch-outline') {
       lines = lines.concat(hatchWith(paths, { ...h, spacing: Math.max(h.spacing, 0.05) }));
@@ -337,7 +335,7 @@ export function compose(
   };
 
   for (const layer of FILL_LAYERS) {
-    fillDraft(layer, layer, LAYER_NAMES[layer], fills[layer], style.fillModes[layer], layer);
+    fillDraft(layer, layer, LAYER_NAMES[layer], fills[layer], style.fillModes[layer], style.hatch[layer]);
   }
 
   for (const layer of LINE_LAYERS) {
@@ -406,11 +404,11 @@ export function compose(
       // Print fills them below.
       if (route.shape.length && s.mode !== 'print') sets.push({ paths: plotter ? contourFill(route.shape, pen) : outlines(route.shape) });
       drafts.push({ id: 'route', element: 'route', label: 'Route', kind: 'stroke', strokeWidth: routeLineWidth, lines: sets });
-      if (s.mode === 'print') fillDraft('route-markers', 'route', 'Route markers', route.shape, 'fill', 'route');
+      if (s.mode === 'print') fillDraft('route-markers', 'route', 'Route markers', route.shape, 'fill', style.hatch.route);
     } else if (plotter && routeDraw === 'fill') {
       drafts.push({ id: 'route', element: 'route', label: 'Route', kind: 'stroke', strokeWidth: pen, lines: [{ paths: contourFill(route.shape, pen) }] });
     } else {
-      fillDraft('route', 'route', 'Route', route.shape, routeDraw, 'route');
+      fillDraft('route', 'route', 'Route', route.shape, routeDraw, style.hatch.route);
     }
   }
 
@@ -434,9 +432,9 @@ export function compose(
       engraved = unionAll([...letters, ...solid]);
       subEngraved = subLetters;
     }
-    fillDraft('text', 'text', 'Title', engraved, style.fillModes.text, 'text');
+    fillDraft('text', 'text', 'Title', engraved, style.fillModes.text, style.hatch.text);
     // A layer of its own, so it can be its own colour, process or pen.
-    fillDraft('subtitle', 'subtitle', 'Subtitle', subEngraved, style.fillModes.subtitle ?? style.fillModes.text, 'text');
+    fillDraft('subtitle', 'subtitle', 'Subtitle', subEngraved, style.fillModes.subtitle ?? style.fillModes.text, style.hatch.text);
     if (subStrokes.length > 0) {
       drafts.push({
         id: subEngraved.length ? 'subtitle-lines' : 'subtitle',
@@ -473,9 +471,12 @@ export function compose(
   }
 
   for (const piece of marks.pieces) {
-    fillDraft(`mark-${piece.id}`, 'mark', piece.label, piece.area, piece.fill, 'marks', piece.color);
+    fillDraft(`mark-${piece.id}`, 'mark', piece.label, piece.area, piece.fill, piece.hatch, piece.color);
+    // The text gets its own layer when it's drawn differently from the shape.
+    const textId = piece.area.length ? `mark-${piece.id}-text` : `mark-${piece.id}`;
+    fillDraft(textId, 'mark', piece.area.length ? `${piece.label} (text)` : piece.label, piece.textArea, piece.textFill, piece.hatch, piece.color);
     if (piece.strokes.length) {
-      const id = piece.area.length ? `mark-${piece.id}-lines` : `mark-${piece.id}`;
+      const id = piece.area.length || piece.textArea.length ? `mark-${piece.id}-lines` : `mark-${piece.id}`;
       drafts.push({ id, element: 'mark', label: piece.label, kind: 'stroke', strokeWidth: titleStroke, color: piece.color, lines: [{ paths: piece.strokes }] });
     }
   }

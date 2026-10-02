@@ -88,6 +88,8 @@ Click `Pins & text` above the preview to start. Pick a shape or text from the to
 
 A mark stays on its spot when the map moves or zooms, or it can be set to stay where it is on the piece instead. Its font and colour follow the title's unless you pick others. The map is left out under it, with a gap around it, like the title. In the file each mark is a layer of its own in its own colour, so it can get its own laser process or pen.
 
+Each mark has its own hatch spacing, angle and cross-hatch, or ring spacing for contours. Text beside a shape can be drawn differently from the shape, like a hatched heart with solid letters, and then it goes on a layer of its own. The gap between the shape and its text can be set too, and it grows and shrinks with the mark. Letter spacing works like the title's, and text with more than one line has line spacing and left, centre or right alignment too.
+
 ## Export
 
 `Download SVG` saves the SVG in one click. `Export` next to it has the rest:

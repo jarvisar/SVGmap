@@ -9,6 +9,7 @@ import { lonLatToWorld, worldSize, worldToLonLat } from '../geo/mercator.ts';
 import type { MapTransform } from '../geo/transform.ts';
 import type { Shape } from '../layout/shapes.ts';
 import type { Path, Point } from '../lines/geometry.ts';
+import type { HatchSettings } from '../plotter.ts';
 import { CUSTOM_FONT_ID, FONTS } from '../text/fonts.ts';
 import { type LoadedFont, type TextGeometry, geometryBounds, textGeometry } from '../text/outline.ts';
 import { MARK_SHAPES, type MarkShape, SHAPE_ORDER } from './shapes.ts';
@@ -18,6 +19,8 @@ export type { MarkShape };
 export type MarkSide = 'right' | 'left' | 'above' | 'below' | 'inside';
 export type MarkAnchor = 'map' | 'page';
 export type MarkFill = 'fill' | 'outline' | 'hatch' | 'hatch-outline' | 'contour';
+// 'auto' lines up multi-line text on the side facing the shape, or centres it.
+export type MarkAlign = 'auto' | 'left' | 'center' | 'right';
 
 export interface MapMark {
   id: string;
@@ -45,6 +48,18 @@ export interface MapMark {
   // #RRGGBB, or '' for the title's colour in each output mode.
   color: string;
   fill: MarkFill;
+  // How the text beside the shape is drawn, or '' for the same as the shape.
+  textFill: MarkFill | '';
+  // Used by hatched and contoured fills. Contours only use the spacing.
+  hatch: HatchSettings;
+  // Share of the font's own letter spacing.
+  letterSpacing: number;
+  // Share of the normal gap between lines, which is 1.6 times the text size.
+  lineSpacing: number;
+  // Between the shape and the text, as a share of the text size so it
+  // keeps in step when the mark is resized.
+  textGap: number;
+  align: MarkAlign;
   // Leave the map out under it, and this far around it.
   clear: boolean;
   gap: number;
@@ -59,11 +74,17 @@ export const MARK_RANGES = {
   textSize: { min: 0.8, max: 60 },
   rotation: { min: -180, max: 180 },
   gap: { min: 0, max: 10 },
+  hatchSpacing: { min: 0.1, max: 10 },
+  hatchAngle: { min: -180, max: 180 },
+  letterSpacing: { min: 0.8, max: 2 },
+  lineSpacing: { min: 0.7, max: 2.5 },
+  textGap: { min: 0, max: 3 },
 } as const;
 
 export const MARK_SIDES: MarkSide[] = ['right', 'left', 'above', 'below', 'inside'];
 const ANCHORS: MarkAnchor[] = ['map', 'page'];
 const FILLS: MarkFill[] = ['fill', 'outline', 'hatch', 'hatch-outline', 'contour'];
+const ALIGNS: MarkAlign[] = ['auto', 'left', 'center', 'right'];
 const HEX = /^#[0-9a-f]{6}$/i;
 const ID = /^[a-z0-9]{1,24}$/i;
 
@@ -82,6 +103,12 @@ export const DEFAULT_MARK: Omit<MapMark, 'id'> = {
   font: '',
   color: '',
   fill: 'fill',
+  textFill: '',
+  hatch: { spacing: 0.3, angle: 45, cross: false },
+  letterSpacing: 1,
+  lineSpacing: 1,
+  textGap: 0.35,
+  align: 'auto',
   clear: true,
   gap: 0.6,
 };
@@ -119,6 +146,7 @@ export function sanitizeMarks(value: unknown): MapMark[] {
     const d = DEFAULT_MARK;
     const font = typeof m.font === 'string' && (m.font === '' || m.font === CUSTOM_FONT_ID || FONTS.some((f) => f.id === m.font)) ? m.font : d.font;
     const lat = number(m.lat, d.lat);
+    const h = typeof m.hatch === 'object' && m.hatch !== null ? (m.hatch as Record<string, unknown>) : {};
     out.push({
       id: m.id,
       shape: oneOf(m.shape, SHAPE_ORDER, d.shape),
@@ -135,6 +163,16 @@ export function sanitizeMarks(value: unknown): MapMark[] {
       font,
       color: typeof m.color === 'string' && (m.color === '' || HEX.test(m.color)) ? m.color.toUpperCase() : d.color,
       fill: oneOf(m.fill, FILLS, d.fill),
+      textFill: m.textFill === '' ? '' : oneOf(m.textFill, FILLS, d.textFill),
+      hatch: {
+        spacing: clamp(number(h.spacing, d.hatch.spacing), MARK_RANGES.hatchSpacing),
+        angle: wrapDegrees(number(h.angle, d.hatch.angle)),
+        cross: typeof h.cross === 'boolean' ? h.cross : d.hatch.cross,
+      },
+      letterSpacing: clamp(number(m.letterSpacing, d.letterSpacing), MARK_RANGES.letterSpacing),
+      lineSpacing: clamp(number(m.lineSpacing, d.lineSpacing), MARK_RANGES.lineSpacing),
+      textGap: clamp(number(m.textGap, d.textGap), MARK_RANGES.textGap),
+      align: oneOf(m.align, ALIGNS, d.align),
       clear: typeof m.clear === 'boolean' ? m.clear : d.clear,
       gap: clamp(number(m.gap, d.gap), MARK_RANGES.gap),
     });
@@ -146,6 +184,12 @@ export function sanitizeMarks(value: unknown): MapMark[] {
 export const markFont = (mark: MapMark, titleFont: string): string => mark.font || titleFont;
 
 export const hasText = (mark: MapMark): boolean => mark.text.trim() !== '';
+
+/** Whether the text is drawn on its own, beside a shape, so it can have its own fill. */
+export const textBeside = (mark: MapMark): boolean => mark.shape !== 'none' && mark.side !== 'inside' && hasText(mark);
+
+/** How the mark's text is drawn. */
+export const markTextFill = (mark: MapMark): MarkFill => (textBeside(mark) && mark.textFill ? mark.textFill : mark.fill);
 
 /** What to call a mark: its text, or the shape's name. */
 export function markName(mark: MapMark): string {
@@ -262,15 +306,15 @@ interface TextBlock {
 }
 
 // Lines stacked with the first baseline at 0, each aligned in the block.
-function textBlock(font: LoadedFont, text: string, height: number, align: 'left' | 'center' | 'right'): TextBlock | null {
+function textBlock(font: LoadedFont, text: string, height: number, align: 'left' | 'center' | 'right', spacing = 1, lineSpacing = 1): TextBlock | null {
   const k = height / capHeight(font);
-  const lineGap = height * 1.6;
+  const lineGap = height * 1.6 * lineSpacing;
   const lines: { g: TextGeometry; x0: number; x1: number; baseline: number }[] = [];
   text.split('\n').forEach((line, i) => {
     const typed = line.trim();
     const baseline = i * lineGap;
     if (!typed) return;
-    const g = textGeometry(font, typed);
+    const g = textGeometry(font, typed, spacing);
     const b = geometryBounds(g);
     if (b) lines.push({ g, x0: b[0] * k, x1: b[2] * k, baseline });
   });
@@ -308,10 +352,10 @@ export function layoutMark(mark: MapMark, font: LoadedFont | null): MarkArtwork 
   let text: TextGeometry = { rings: [], strokes: [] };
   if (typed && font) {
     const side = mark.shape === 'none' ? 'none' : mark.side;
-    const align = side === 'right' ? 'left' : side === 'left' ? 'right' : 'center';
-    const block = textBlock(font, mark.text, mark.textSize, align);
+    const align = mark.align !== 'auto' ? mark.align : side === 'right' ? 'left' : side === 'left' ? 'right' : 'center';
+    const block = textBlock(font, mark.text, mark.textSize, align, mark.letterSpacing, mark.lineSpacing);
     if (block) {
-      const g = Math.max(0.4, mark.textSize * 0.35);
+      const g = mark.textSize * mark.textGap;
       const midY = (block.capTop + block.lastBaseline) / 2;
       // Descenders hang about a quarter of the cap height under the last line.
       const bottom = block.lastBaseline + mark.textSize * 0.28;

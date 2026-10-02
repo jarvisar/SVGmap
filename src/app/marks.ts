@@ -55,7 +55,7 @@ export function markSpot(mark: MapMark, s: Pick<AppState, 'area' | 'product' | '
 function reach(mark: MapMark): number {
   const shape = mark.shape === 'none' ? 0 : mark.size * 0.6;
   const longest = Math.max(0, ...mark.text.split('\n').map((line) => line.trim().length));
-  return shape + longest * mark.textSize * 0.4;
+  return shape + longest * mark.textSize * 0.4 * mark.letterSpacing;
 }
 
 // Near the middle of the map, but clear of the marks already there, so a few
