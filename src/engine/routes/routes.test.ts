@@ -232,6 +232,11 @@ describe('reading route files', () => {
     expect((await parse('t.json', JSON.stringify(feature))).lines).toHaveLength(1);
   });
 
+  it('skips a comment with a tag in it before the root', async () => {
+    const gpx = `<?xml version="1.0"?>\n<!-- made by <tool> -->\n<gpx><trk><trkseg><trkpt lat="1" lon="1"/><trkpt lat="1.01" lon="1"/></trkseg></trk></gpx>`;
+    expect((await parse('tool.gpx', gpx)).lines).toHaveLength(1);
+  });
+
   it('splits a line where it crosses the 180th meridian', async () => {
     const route = await parse('ferry.gpx', `<gpx><trk><trkseg><trkpt lat="0" lon="179.9"/><trkpt lat="0" lon="179.99"/><trkpt lat="0" lon="-179.99"/><trkpt lat="0" lon="-179.9"/></trkseg></trk></gpx>`);
     expect(route.lines).toHaveLength(2);
@@ -326,6 +331,31 @@ describe('fitting the map to a route', () => {
       ],
     ];
     expect(fitArea(loop, { window, avoid: null, bearing: 0, rotate: true, margin: 5 })!.bearing).toBe(0);
+  });
+
+  it('frames a route across the 180th meridian as one piece', () => {
+    // A ferry near Fiji, split where it crosses like an import does.
+    const ferry: LonLat[][] = [
+      [
+        [179.9, -16.8],
+        [179.99, -16.82],
+      ],
+      [
+        [-179.99, -16.83],
+        [-179.9, -16.85],
+      ],
+    ];
+    const area = fitArea(ferry, { window, avoid: null, bearing: 0, rotate: false, margin: 5 })!;
+    expect(area.widthM).toBeLessThan(50_000);
+    expect(Math.abs(area.lon)).toBeGreaterThan(179.9);
+    expect(Math.abs(area.lon)).toBeLessThanOrEqual(180);
+  });
+
+  it('fits the route inside the letters when the map only shows there', () => {
+    const letters: [number, number, number, number] = [window.x + 20, window.y + window.h * 0.3, window.w - 40, window.h * 0.4];
+    const area = fitArea(route, { window, avoid: null, inside: letters, bearing: 0, rotate: false, margin: 3 })!;
+    const [x, y, w, h] = letters;
+    expect(onPiece(area).every(([px, py]) => px >= x && px <= x + w && py >= y && py <= y + h)).toBe(true);
   });
 
   // Math.min(...points) ran out of stack at around 300,000 points.

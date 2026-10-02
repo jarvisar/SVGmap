@@ -37,11 +37,12 @@ const trim = (n: number) => String(Number(n.toFixed(3)));
 function distances(units: LabelSettings['legendUnits']): Distance[] {
   const out: Distance[] = [];
   if (units === 'imperial') {
-    for (const ft of [20, 50, 100, 200, 250, 500, 1000, 2000]) out.push({ metres: ft * FOOT, half: trim(ft / 2), full: `${ft} ft` });
+    for (const ft of [1, 2, 5, 10, 20, 50, 100, 200, 250, 500, 1000, 2000]) out.push({ metres: ft * FOOT, half: trim(ft / 2), full: `${ft} ft` });
     for (const mi of [0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000]) out.push({ metres: mi * MILE, half: trim(mi / 2), full: `${mi} mi` });
     return out;
   }
-  for (let exp = 1; exp <= 6; exp++) {
+  // From 1 m, for the closest scale the app goes to, 1:100.
+  for (let exp = 0; exp <= 6; exp++) {
     for (const m of [1, 2, 2.5, 5]) {
       const metres = m * 10 ** exp;
       const km = metres >= 1000;
@@ -130,14 +131,16 @@ export function layoutLegendLabel(
     return { g: place(g, ([px, py]) => [dx + (px - b[0]) * labelScale, baseline - (b[3] - py) * labelScale]), w };
   };
 
+  const slot = contentW - arrowSpace;
+  const mpm = map?.metresPerMm ?? 10;
+  const width = (text: string) => label(text, 0, 0, 'start').w;
+  const start = x0 + width('0') / 2;
+  let pick: Distance | null = null;
   if (showScale) {
-    const slot = contentW - arrowSpace;
-    const mpm = map?.metresPerMm ?? 10;
-    const width = (text: string) => label(text, 0, 0, 'start').w;
-    const start = x0 + width('0') / 2;
-    const options = distances(s.legendUnits);
-    let pick = options[0];
-    for (const d of options) if (start + d.metres / mpm + width(d.full) / 2 <= x0 + slot) pick = d;
+    for (const d of distances(s.legendUnits)) if (start + d.metres / mpm + width(d.full) / 2 <= x0 + slot) pick = d;
+  }
+  // The bar is left out when even the shortest one would run out of the box.
+  if (pick) {
     const length = pick.metres / mpm;
     const baseline = y + L;
     const barTop = y + L * 1.5;

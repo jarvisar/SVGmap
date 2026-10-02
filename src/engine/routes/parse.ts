@@ -261,8 +261,18 @@ function readGeoJson(source: string): FileContents {
   return { name, chunks, points };
 }
 
+// The first element's name. Comments come first in some exports and can hold
+// tags of their own, like <!-- made by <tool> -->.
+function rootName(source: string): string {
+  const tags = /<!--[\s\S]*?-->|<[?!][^>]*>|<([^\s/>]+)/g;
+  for (let match = tags.exec(source); match; match = tags.exec(source)) {
+    if (match[1]) return match[1];
+  }
+  return '';
+}
+
 function readXml(source: string): FileContents {
-  const root = /<(?![?!])([^\s/>]+)/.exec(source)?.[1] ?? '';
+  const root = rootName(source);
   switch (root.slice(root.indexOf(':') + 1)) {
     case 'gpx':
       return readGpx(source);

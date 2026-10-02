@@ -6,12 +6,15 @@ import { compose } from '../compose.ts';
 import { defaultRenderSettings } from '../defaults.ts';
 import { TILE_EXTENT, lonLatToWorld, worldToLonLat } from '../geo/mercator.ts';
 import { computeLayout } from '../layout/layout.ts';
+import { insetShape, shapeContains } from '../layout/shapes.ts';
 import { type Path, type Point, pathLength, pointSegmentDistanceSq } from '../lines/geometry.ts';
 import { type Prepared, planTiles, prepareArea } from '../prepare.ts';
 import type { RenderResult } from '../result.ts';
 import { type OutputMode, PLOTTER_STYLE, type RenderSettings, type RouteData } from '../settings.ts';
 import { toSvg } from '../svg/writer.ts';
 import { type HersheyFile, parseHershey } from '../text/hershey.ts';
+import { buildLabel } from '../text/label.ts';
+import { parseOutlineFont } from '../text/loadFont.ts';
 import type { LonLat } from './polyline.ts';
 import { decodeRoute, encodeRoute } from './route.ts';
 
@@ -193,5 +196,47 @@ describe('routes on a real tile', () => {
       s.routes = { ...s.routes, items: [route('corner', [[toLonLat([cx, cy]), toLonLat([cx + 200, cy + 200])]])] };
     });
     expect(corner.warnings).toEqual([expect.stringContaining('under the title')]);
+  });
+
+  it('says the route is under the title, not off the map, when the title hides all of it', () => {
+    const settings = baseSettings('laser');
+    const [x, y, w, h] = buildLabel(computeLayout(settings.product, settings.border), settings.label, font, font).artwork!.knockout;
+    const result = render('laser', (s) => {
+      s.routes = { ...s.routes, items: [route('hidden', [[toLonLat([x + w * 0.4, y + h / 2]), toLonLat([x + w * 0.6, y + h / 2])]])] };
+    });
+    expect(result.warnings).toEqual(['The route is under the title. Move the title or the map to show it.']);
+  });
+
+  it('keeps the round ends of a print line inside the window and off the title', () => {
+    const settings = baseSettings('print');
+    const layout = computeLayout(settings.product, settings.border);
+    const [x, y, w, h] = buildLabel(layout, settings.label, font, font).artwork!.knockout;
+    // One right across the map, one into the title box in the corner.
+    const lines: LonLat[][] = [
+      [toLonLat([cx - 400, cy]), toLonLat([cx + 400, cy])],
+      [toLonLat([cx, cy]), toLonLat([cx + 200, cy + 200])],
+    ];
+    const result = render('print', (s) => {
+      s.routes = { ...s.routes, items: [route('through', lines)] };
+    });
+    const half = result.groups.find((g) => g.id === 'route')!.strokeWidth / 2;
+    const points = subpaths(result, 'route').flat();
+    expect(points.length).toBeGreaterThan(0);
+    // Path data is rounded, so a little slack.
+    const inner = insetShape(layout.window, half - 0.01);
+    expect(points.filter((p) => !shapeContains(inner, p))).toEqual([]);
+    const nearTitle = (p: Point) => p[0] > x - half + 0.01 && p[0] < x + w + half - 0.01 && p[1] > y - half + 0.01 && p[1] < y + h + half - 0.01;
+    expect(points.filter(nearTitle)).toEqual([]);
+  });
+
+  it("doesn't warn about the route between the letters when the map only shows inside them", () => {
+    const bytes = readFileSync('public/fonts/Montserrat-SemiBold.ttf');
+    const montserrat = parseOutlineFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    const settings = baseSettings('laser');
+    settings.label = { ...settings.label, style: 'letters', lettersMode: 'window' };
+    settings.routes = { ...settings.routes, items: ROUTES };
+    const layout = computeLayout(settings.product, settings.border);
+    const result = compose(settings, layout, prepare(settings), { title: montserrat, subtitle: montserrat }, new Map<string, Paths64>());
+    expect(result.warnings).toEqual([]);
   });
 });

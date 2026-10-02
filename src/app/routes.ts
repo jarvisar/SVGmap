@@ -2,7 +2,7 @@
 // main thread, which takes well under a second even for a long ride.
 import type { Feature, FeatureCollection } from 'geojson';
 import { create } from 'zustand';
-import { lonLatToWorld } from '../engine/geo/mercator.ts';
+import { lonLatToWorld, worldSize } from '../engine/geo/mercator.ts';
 import { type AreaSpec, makeTransform } from '../engine/geo/transform.ts';
 import { type Layout, computeLayout } from '../engine/layout/layout.ts';
 import { shapeCentre, shapeContains } from '../engine/layout/shapes.ts';
@@ -70,12 +70,14 @@ export async function fitMapToRoutes(rotate: boolean): Promise<boolean> {
     return false;
   }
   // Without the fonts the title's size is unknown, so it's fitted to the whole window.
-  const label = await loadLabelArtwork(layout, s.label).catch(() => null);
+  const artwork = (await loadLabelArtwork(layout, s.label).catch(() => null))?.artwork ?? null;
   const { window } = layout;
   const reach = s.routes.markers ? Math.max(s.routes.markerSize * 0.6, s.routes.width / 2) : s.routes.width / 2;
   const area = fitArea(lines, {
     window,
-    avoid: label?.artwork?.knockout ?? null,
+    // When the map only shows inside the letters, the route goes in them.
+    avoid: artwork && !artwork.keep ? artwork.knockout : null,
+    inside: artwork?.keep ? artwork.knockout : null,
     bearing: s.area.bearing,
     rotate,
     margin: Math.max(2, Math.min(window.w, window.h) * 0.04) + reach + s.routes.gap,
@@ -90,13 +92,16 @@ export async function fitMapToRoutes(rotate: boolean): Promise<boolean> {
 // map is dragged, so long routes are sampled.
 export function shareOutside(lines: readonly LonLat[][], area: AreaSpec, layout: Layout): number {
   const transform = makeTransform(area, 14, shapeCentre(layout.window), layout.window.w);
+  const world = worldSize(14);
   let total = 0;
   let out = 0;
   for (const line of lines) {
     const step = Math.max(1, Math.floor(line.length / 500));
     for (let i = 0; i < line.length; i += step) {
       total++;
-      if (!shapeContains(layout.window, transform.toCanvas(...lonLatToWorld(line[i][0], line[i][1], 14)))) out++;
+      const [x, y] = lonLatToWorld(line[i][0], line[i][1], 14);
+      // The copy of the world nearest the map, like the render, for routes across the 180th meridian.
+      if (!shapeContains(layout.window, transform.toCanvas(x + world * Math.round((transform.cx - x) / world), y))) out++;
     }
   }
   return total ? out / total : 0;

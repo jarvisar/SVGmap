@@ -7,8 +7,10 @@ import { DEFAULT_PRODUCT } from '../engine/presets.ts';
 import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute, encodeRoute } from '../engine/routes/route.ts';
 import {
   LASER_PALETTES,
+  LASER_STYLE,
   type ModeStyle,
   type OutputMode,
+  PRINT_THEMES,
   ROUTE_DRAWS,
   type RenderSettings,
   type RouteData,
@@ -188,11 +190,36 @@ const LABEL_V1: Partial<Record<keyof LabelSettings, number>> = {
   dividerWidth: 0.1,
 };
 
+const ownEntry = <T>(table: Record<string, T>, key: unknown): T | undefined =>
+  typeof key === 'string' && Object.hasOwn(table, key) ? table[key] : undefined;
+
+// Settings saved before routes, and links made then, got their route colour
+// from the default palette. On the Minimal or LightBurn palette that's an extra
+// process colour, so it comes from the user's own palette and print theme.
+// A route colour still on the default palette's is taken to be one of those.
+export function fillRouteColours(settings: unknown): unknown {
+  if (!isObject(settings) || !isObject(settings.styles)) return settings;
+  const styles: Record<string, unknown> = { ...settings.styles };
+  const fill = (mode: OutputMode, own: string | undefined, fallback: string) => {
+    const style = styles[mode];
+    if (!own || !isObject(style) || !isObject(style.colors)) return;
+    const route = style.colors.route;
+    if (route === undefined || route === fallback) styles[mode] = { ...style, colors: { ...style.colors, route: own } };
+  };
+  fill('laser', ownEntry(LASER_PALETTES, settings.laserPalette)?.colors.route, LASER_STYLE.colors.route);
+  fill('print', ownEntry(PRINT_THEMES, settings.printTheme)?.colors.route, PRINT_THEMES.classic.colors.route);
+  return { ...settings, styles };
+}
+
 export function migrateSettings(persisted: unknown, version: number): unknown {
-  if (version >= 2 || !isObject(persisted) || !isObject(persisted.label)) return persisted;
-  const label: Record<string, unknown> = { ...persisted.label };
-  for (const [key, old] of Object.entries(LABEL_V1)) {
-    if (label[key] === old) label[key] = DEFAULT_LABEL[key as keyof LabelSettings];
+  if (!isObject(persisted)) return persisted;
+  let out = persisted;
+  if (version < 2 && isObject(out.label)) {
+    const label: Record<string, unknown> = { ...out.label };
+    for (const [key, old] of Object.entries(LABEL_V1)) {
+      if (label[key] === old) label[key] = DEFAULT_LABEL[key as keyof LabelSettings];
+    }
+    out = { ...out, label };
   }
-  return { ...persisted, label };
+  return version < 3 ? fillRouteColours(out) : out;
 }

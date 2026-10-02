@@ -7,13 +7,14 @@ import { SCALE, bufferLines, dilate, intersectWith, linesOutside, makeFillTester
 import { clipPolylineInside } from '../geo/clip.ts';
 import { lonLatToWorld, worldSize } from '../geo/mercator.ts';
 import type { MapTransform } from '../geo/transform.ts';
-import { type Shape, shapePolygon } from '../layout/shapes.ts';
+import { type Shape, insetShape, shapePolygon } from '../layout/shapes.ts';
 import { type Path, type Point, pathLength } from '../lines/geometry.ts';
 import type { RouteDraw, RouteSettings } from '../settings.ts';
 import { decodeRoute, simplifyPath } from './route.ts';
 
 export interface RouteArtwork {
-  // Centrelines, inside the window and out from under the title.
+  // Centrelines, inside the window and out from under the title. For a line
+  // route, cut back so its round caps stay inside too.
   lines: Path[];
   // The band and markers, or only the markers when the route is a line.
   shape: Paths64;
@@ -86,13 +87,14 @@ export function buildRoutes(
   };
   const windowPoly = shapePolygon(window);
   const markers: Path[] = [];
-  const inside: Path[] = [];
+  const projected: Path[] = [];
   for (const route of visible) {
     const lines = decodeRoute(route).map((line) => simplifyPath(line.map(project), SIMPLIFY_MM));
     if (lines.length === 0) continue;
     if (routes.markers) markers.push(...markerShapes(lines, routes.markerSize));
-    for (const line of lines) inside.push(...clipPolylineInside(line, windowPoly));
+    projected.push(...lines);
   }
+  const inside = projected.flatMap((line) => clipPolylineInside(line, windowPoly));
   const shown = linesOutside(inside, title);
   const drawnMm = totalLength(shown);
   const underTitleMm = totalLength(inside) - drawnMm;
@@ -101,9 +103,19 @@ export function buildRoutes(
   const onPiece = (paths: Paths64) => subtract(intersectWith(paths, windowClip), title);
   let shape: Paths64;
   let footprint: Paths64;
+  let stroked = shown;
   if (draw === 'line') {
+    // Round caps reach half the width past the end of the line, so it stops
+    // that far short of the window edge and the title. A 1 mm print line
+    // would otherwise poke into the border gap.
+    const half = lineWidth / 2;
+    const innerPoly = shapePolygon(insetShape(window, half));
+    stroked = linesOutside(
+      projected.flatMap((line) => clipPolylineInside(line, innerPoly)),
+      title.length ? dilate(title, half) : title,
+    );
     shape = markers.length ? onPiece(unionAll(markers.map(toPath64))) : [];
-    footprint = unionAll([...bufferLines(shown, lineWidth / 2, true), ...shape]);
+    footprint = unionAll([...bufferLines(stroked, half, true), ...shape]);
   } else {
     // Buffered before the title is cut out, so the band stops square at its edge.
     const band = bufferLines(inside, routes.width / 2, true);
@@ -111,7 +123,7 @@ export function buildRoutes(
     footprint = shape;
   }
   const clear = routes.gap > 0 ? dilate(footprint, routes.gap) : footprint;
-  return { lines: shown, shape, clear, drawnMm, underTitleMm };
+  return { lines: stroked, shape, clear, drawnMm, underTitleMm };
 }
 
 // Cells the clear space touches, padded by one, so most of the map's lines can

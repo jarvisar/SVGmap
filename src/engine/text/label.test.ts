@@ -148,6 +148,19 @@ describe('title styles', () => {
     }
   });
 
+  it('keeps the scale bar in the legend at the closest scales', () => {
+    // 1:100 is the closest the app goes. The shortest bar used to be 10 m, which ran off the piece.
+    for (const legendUnits of ['metric', 'imperial'] as const) {
+      for (const size of [100, 20]) {
+        const s = { ...DEFAULT_LABEL, style: 'legend' as const, legendUnits, size };
+        const artwork = buildLabel(plaque, s, montserrat, montserrat, { metresPerMm: 0.1, bearing: 0 }).artwork!;
+        const [x, y, w, h] = artwork.knockout;
+        const points = [...artwork.solid, ...artwork.frame].flat();
+        expect(points.every((p) => inside([x, y, w, h], p))).toBe(true);
+      }
+    }
+  });
+
   it('needs an outline font to show the map inside the letters', () => {
     const s = { ...DEFAULT_LABEL, style: 'letters' as const, lettersMode: 'window' as const };
     expect(buildLabel(plaque, s, montserrat, montserrat).artwork!.keep!.length).toBeGreaterThan(5);

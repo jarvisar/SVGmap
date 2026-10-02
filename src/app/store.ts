@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import type { AreaSpec } from '../engine/geo/transform.ts';
 import { type BorderSettings, type ProductSettings, computeLayout } from '../engine/layout/layout.ts';
 import type { CleanupSettings } from '../engine/lines/cleanup.ts';
-import { PLACE_PRESETS, PRODUCT_PRESETS } from '../engine/presets.ts';
+import { PLACE_PRESETS, PRODUCT_PRESETS, subtitleForPlace } from '../engine/presets.ts';
 import {
   LASER_PALETTES,
   type ModeStyle,
@@ -125,7 +125,7 @@ export const useApp = create<AppState>()(
         if (!place) return;
         set((s) => ({
           area: { lon: place.lon, lat: place.lat, bearing: 0, widthM: s.scaleLocked ? s.area.widthM : place.widthM },
-          label: { ...s.label, text: place.label },
+          label: { ...s.label, text: place.label, subtitle: subtitleForPlace(s.label.subtitle, place.lat, place.lon) },
         }));
       },
       setBorder: (patch) =>
@@ -188,7 +188,7 @@ export const useApp = create<AppState>()(
     }),
     {
       name: 'svgmap-settings',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => migrateSettings(persisted, version) as AppState,
       partialize: (s) => {
         const { view: _view, ...rest } = s;

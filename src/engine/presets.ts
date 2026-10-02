@@ -1,5 +1,5 @@
 import type { BorderStyle, ProductSettings } from './layout/layout.ts';
-import type { LabelSettings } from './text/label.ts';
+import { DEFAULT_LABEL, type LabelSettings } from './text/label.ts';
 
 export interface ProductPreset {
   id: string;
@@ -135,8 +135,8 @@ export interface LabelPreset {
   label: Partial<LabelSettings>;
 }
 
-// A few looks for each title style. They leave the title text alone and put
-// size and letter spacing back to normal.
+// A few looks for each title style. They keep the title text and the legend's
+// units, and put everything else back to the defaults.
 export const LABEL_PRESETS: LabelPreset[] = [
   { id: 'plaque', name: 'Plaque', label: { style: 'box', font: 'montserrat', boxBorder: true, solid: false, position: 'lower_right' } },
   { id: 'plate', name: 'Engraved plate', label: { style: 'box', font: 'oswald', solid: true, position: 'lower_right' } },
@@ -178,10 +178,18 @@ export function formatCoordinates(lat: number, lon: number, short = false): stri
 const COORDINATES = /^\d+(\.\d+)?° [NS],? \d+(\.\d+)?° [EW]$/;
 
 // A subtitle the user typed is kept. Coordinates are rewritten in the preset's form.
+// Everything else starts from the defaults, so nothing is left over from the
+// last preset, like the band height or a box turned on its side.
 export function applyLabelPreset(preset: LabelPreset, label: LabelSettings, lat: number, lon: number): LabelSettings {
   const typed = label.subtitle.trim();
   const subtitle = preset.subtitle && (!typed || COORDINATES.test(typed)) ? formatCoordinates(lat, lon, preset.subtitle === 'short') : label.subtitle;
-  return { ...label, size: 100, titleSpacing: 1, subtitleSpacing: 1, subtitleFont: '', ...preset.label, subtitle };
+  return { ...DEFAULT_LABEL, enabled: label.enabled, text: label.text, legendUnits: label.legendUnits, ...preset.label, subtitle };
+}
+
+// Coordinates in the subtitle follow the map to a new place, in the same form.
+export function subtitleForPlace(subtitle: string, lat: number, lon: number): string {
+  const typed = subtitle.trim();
+  return COORDINATES.test(typed) ? formatCoordinates(lat, lon, !typed.includes(',')) : subtitle;
 }
 
 export const DEFAULT_PRODUCT = PRODUCT_PRESETS[0];

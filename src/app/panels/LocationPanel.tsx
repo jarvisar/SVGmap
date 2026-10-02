@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { PLACE_PRESETS } from '../../engine/presets.ts';
+import { PLACE_PRESETS, subtitleForPlace } from '../../engine/presets.ts';
 import { Field, LockIcon, NumberInput, Section, Select, Slider } from '../components/controls.tsx';
 import { type Place, searchPlaces } from '../geocode.ts';
 import { scaleOf, useApp } from '../store.ts';
@@ -50,7 +50,7 @@ function PlaceSearch() {
 
   const choose = (place: Place) => {
     setArea({ lon: place.lon, lat: place.lat, widthM: place.widthM, bearing: 0 });
-    setLabel({ text: place.name.toUpperCase() });
+    setLabel({ text: place.name.toUpperCase(), subtitle: subtitleForPlace(useApp.getState().label.subtitle, place.lat, place.lon) });
     picked.current = place.name;
     setQuery(place.name);
     setOpen(false);

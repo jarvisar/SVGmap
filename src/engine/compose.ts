@@ -147,10 +147,18 @@ export function compose(
   const routeDraw = ROUTE_DRAWS.includes(style.routeDraw) ? style.routeDraw : 'fill';
   const routeLineWidth = plotter ? pen : s.mode === 'laser' ? hairline : s.routes.width;
   const route = buildRoutes(s.routes, routeDraw, routeLineWidth, prepared.transform, window, knockout);
-  if (route && route.drawnMm === 0 && route.shape.length === 0) {
-    warnings.push('The route is outside the map. Use Fit map under Routes to frame it.');
-  } else if (route && route.underTitleMm > Math.max(3, 0.03 * (route.drawnMm + route.underTitleMm))) {
-    warnings.push('Part of the route is under the title. Move the title or the map to show all of it.');
+  if (route) {
+    const inWindowMm = route.drawnMm + route.underTitleMm;
+    // With the map only inside the letters, some of the route is always
+    // between them, so that's only worth a warning when none of it shows.
+    const lettersOnly = label?.keep != null;
+    if (route.drawnMm === 0 && route.shape.length === 0) {
+      if (inWindowMm === 0) warnings.push('The route is outside the map. Use Fit map under Routes to frame it.');
+      else if (lettersOnly) warnings.push('The route is outside the letters, where the map shows. Use Fit map under Routes to frame it.');
+      else warnings.push('The route is under the title. Move the title or the map to show it.');
+    } else if (!lettersOnly && route.underTitleMm > Math.max(3, 0.03 * inWindowMm)) {
+      warnings.push('Part of the route is under the title. Move the title or the map to show all of it.');
+    }
   }
   // What the map leaves empty: the title and the gap around the route.
   const cutouts = route?.clear.length ? unionAll([...knockout, ...route.clear]) : knockout;

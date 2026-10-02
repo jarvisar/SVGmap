@@ -19,6 +19,9 @@ export interface FitOptions {
   margin: number;
   // Keep this map width, for a locked scale, and only move the map.
   widthM?: number;
+  // Only for the map inside the letters: the box [x, y, w, h] the route goes
+  // in, instead of the whole window.
+  inside?: [number, number, number, number] | null;
 }
 
 const MIN_WIDTH_M = 100;
@@ -111,7 +114,11 @@ function region(poly: Path, margin: number, whole: boolean): Region | null {
 }
 
 function regions(options: FitOptions): Region[] {
-  const window = shapePolygon(options.window, 0.05);
+  let window = shapePolygon(options.window, 0.05);
+  if (options.inside) {
+    const [x, y, w, h] = options.inside;
+    window = clipConvex(clipConvex(clipConvex(clipConvex(window, [1, 0], x), [-1, 0], -(x + w)), [0, 1], y), [0, -1], -(y + h));
+  }
   const out = [region(window, options.margin, true)];
   if (options.avoid) {
     const [x, y, w, h] = options.avoid;
@@ -148,7 +155,29 @@ interface Placement {
   centre: Point;
 }
 
-export function fitArea(lines: readonly LonLat[][], options: FitOptions): AreaSpec | null {
+// A route across the 180th meridian has its western half moved a world over,
+// so it's framed as one piece instead of across the whole world. Imports split
+// lines there, so each line already stays on one side.
+function acrossDateline(lines: readonly LonLat[][]): readonly LonLat[][] {
+  let west = Infinity;
+  let east = -Infinity;
+  let shiftedWest = Infinity;
+  let shiftedEast = -Infinity;
+  for (const line of lines) {
+    for (const [lon] of line) {
+      const shifted = lon < 0 ? lon + 360 : lon;
+      west = Math.min(west, lon);
+      east = Math.max(east, lon);
+      shiftedWest = Math.min(shiftedWest, shifted);
+      shiftedEast = Math.max(shiftedEast, shifted);
+    }
+  }
+  if (shiftedEast - shiftedWest >= east - west) return lines;
+  return lines.map((line) => line.map(([lon, lat]): LonLat => [lon < 0 ? lon + 360 : lon, lat]));
+}
+
+export function fitArea(input: readonly LonLat[][], options: FitOptions): AreaSpec | null {
+  const lines = acrossDateline(input);
   const world = lines.flatMap((line) => line.map(([lon, lat]) => lonLatToWorld(lon, lat, 0)));
   if (world.length === 0) return null;
   const corners = hull(world);
@@ -230,5 +259,7 @@ export function fitArea(lines: readonly LonLat[][], options: FitOptions): AreaSp
     k *= widthM / MIN_WIDTH_M;
     ({ centre, widthM } = solve(k));
   }
-  return { lon: centre.lon, lat: centre.lat, bearing: best.bearing, widthM: options.widthM ?? widthM };
+  // Back between -180 and 180 after acrossDateline.
+  const lon = ((((centre.lon + 180) % 360) + 360) % 360) - 180;
+  return { lon, lat: centre.lat, bearing: best.bearing, widthM: options.widthM ?? widthM };
 }
