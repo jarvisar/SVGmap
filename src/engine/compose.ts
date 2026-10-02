@@ -463,6 +463,8 @@ export function compose(
       tiles: prepared.tiles,
       missingTiles: prepared.missing,
       bytes: prepared.bytes,
+      ...(prepared.overtureBuildings !== undefined ? { overtureBuildings: prepared.overtureBuildings } : {}),
+      ...(prepared.overtureFailed ? { overtureFailed: true } : {}),
       cleanup: s.cleanup.enabled ? cleaned.stats : null,
       coverage,
       plotter: plotterStats,
@@ -476,7 +478,7 @@ export function compose(
       widthM: prepared.widthM,
       heightM: prepared.heightM,
       scale: Math.round(prepared.transform.metresPerMm * 1000),
-      attribution: ATTRIBUTION,
+      attribution: prepared.overtureBuildings && layerOn.buildings ? `${ATTRIBUTION}, Overture Maps Foundation` : ATTRIBUTION,
       generated: new Date().toISOString(),
     },
   };

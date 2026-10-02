@@ -64,6 +64,15 @@ describe('settings', () => {
     const merged = mergeSettings(defaultSettings(), { styles: { print: { background: null } } });
     expect(merged.styles.print.background).toBeNull();
   });
+
+  it('keeps Overture buildings off for settings saved before the option', () => {
+    const old = mergeSettings(defaultSettings(), { source: { tiles: 'https://tiles.example/{z}/{x}/{y}.pbf', maxZoom: 14, maxTiles: 50 } });
+    expect(old.source).toEqual({ tiles: 'https://tiles.example/{z}/{x}/{y}.pbf', maxZoom: 14, maxTiles: 50, overtureBuildings: false });
+    expect(mergeSettings(defaultSettings(), { source: { overtureBuildings: 'yes' } }).source.overtureBuildings).toBe(false);
+    expect(mergeSettings(defaultSettings(), { source: { overtureBuildings: 1 } }).source.overtureBuildings).toBe(false);
+    expect(mergeSettings(defaultSettings(), { source: { overtureBuildings: true } }).source.overtureBuildings).toBe(true);
+    expect(toRenderSettings(mergeSettings(defaultSettings(), { source: { overtureBuildings: true } })).source.overtureBuildings).toBe(true);
+  });
 });
 
 describe('share links', () => {
@@ -74,13 +83,17 @@ describe('share links', () => {
     settings.styles.print.background = null;
     settings.area = { lon: -46.63, lat: -23.55, bearing: 12.5, widthM: 4200 };
     expect(decodeSettings(encodeSettings(settings))).toEqual(settings);
+    settings.source.overtureBuildings = true;
+    expect(decodeSettings(encodeSettings(settings))!.source.overtureBuildings).toBe(true);
   });
 
   it('only hold what changed', () => {
     const settings = defaultSettings();
     settings.label.text = 'ROME';
-    const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encodeSettings(settings)), (c) => c.charCodeAt(0))));
-    expect(json).toEqual({ label: { text: 'ROME' } });
+    const decode = (encoded: string) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))));
+    expect(decode(encodeSettings(settings))).toEqual({ label: { text: 'ROME' } });
+    settings.source = { ...settings.source, overtureBuildings: true };
+    expect(decode(encodeSettings(settings))).toEqual({ label: { text: 'ROME' }, source: { overtureBuildings: true } });
   });
 
   it('ignore text that is not a share link', () => {

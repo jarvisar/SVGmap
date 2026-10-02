@@ -1,13 +1,15 @@
 import { DEFAULT_SOURCE } from '../../engine/settings.ts';
-import { NumberField, Section, TextField } from '../components/controls.tsx';
+import { Check, NumberField, Section, TextField } from '../components/controls.tsx';
 import { useApp } from '../store.ts';
 
 export function DataPanel() {
   const source = useApp((s) => s.source);
+  const buildingsShown = useApp((s) => s.layers.buildings);
   const set = useApp((s) => s.set);
   const custom = source.tiles !== DEFAULT_SOURCE.tiles;
+  const summary = `${custom ? 'Custom source' : 'OpenFreeMap'}${source.overtureBuildings ? ' + Overture' : ''}`;
   return (
-    <Section title="Map data" summary={custom ? 'Custom source' : 'OpenFreeMap'}>
+    <Section title="Map data" summary={summary}>
       <TextField
         label="Tile source"
         value={source.tiles}
@@ -29,6 +31,18 @@ export function DataPanel() {
         onChange={(maxTiles) => set({ source: { ...source, maxTiles } })}
         hint="Bigger areas switch to less detailed tiles to stay under this."
       />
+      <Check
+        label="Add missing buildings from Overture"
+        checked={source.overtureBuildings}
+        disabled={!buildingsShown}
+        onChange={(overtureBuildings) => set({ source: { ...source, overtureBuildings } })}
+      />
+      <div className="hint">
+        Adds the building outlines Overture Maps has and OpenStreetMap doesn't, mostly Microsoft's and Google's
+        machine-learning footprints. It fills in suburbs and towns nobody has mapped yet, and adds little in big city
+        centers. It's a second download, so maps take longer, and it only works at full detail (zoom 14).
+        {buildingsShown ? null : ' Turn on the Buildings layer to use it.'}
+      </div>
     </Section>
   );
 }

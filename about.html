@@ -247,6 +247,10 @@
         <li>Print mode uses coloured themes with wider lines for bigger roads.</li>
         <li>Presets for plaques, paper sizes and coasters, or your own size. Rectangle, rounded, circle or hexagon.</li>
         <li>Water, parks, buildings, roads, paths and railways can each be turned off, recoloured, outlined or hatched.</li>
+        <li>
+          Can fill in the buildings OpenStreetMap is missing with footprints from Overture Maps, which helps a lot in
+          suburbs and towns nobody has mapped yet.
+        </li>
         <li>A title box or band. Six fonts are included, plus single-line fonts for plotters, or you can load your own.</li>
         <li>Line cleanup removes doubled and crowded lines that would burn into one dark band.</li>
         <li>Files are sized in millimetres and the text is converted to outlines, so no fonts are needed.</li>
@@ -284,6 +288,12 @@
         merged and written out as an SVG.
       </p>
       <p>
+        With <code>Add missing buildings from Overture</code> on under Map data, it also reads the building footprints
+        Overture Maps has and OpenStreetMap doesn't, straight from Overture's GeoParquet files. Most of them are
+        Microsoft's and Google's machine-learning footprints. Any that mostly overlap a building already in the tiles
+        are skipped, and the rest are drawn like any other building.
+      </p>
+      <p>
         There's no server doing the work. Tiles and decoded geometry are kept between renders, so changing a setting
         doesn't download anything again.
       </p>
@@ -295,7 +305,8 @@
       <footer>
         Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors. Credit
         OpenStreetMap on anything you publish or sell. Tiles by <a href="https://openfreemap.org">OpenFreeMap</a>,
-        search by <a href="https://photon.komoot.io">Photon</a>.
+        extra building footprints from <a href="https://overturemaps.org">Overture Maps Foundation</a>, search by
+        <a href="https://photon.komoot.io">Photon</a>.
         <p class="made-by">Made by Team Jarvis.</p>
       </footer>
     </main>

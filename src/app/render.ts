@@ -101,6 +101,15 @@ function getWorker(): Worker {
   return worker;
 }
 
+// How far along the bar is, 0 to 1.
+export function renderFraction(progress: RenderProgress | null): number {
+  if (!progress) return 0;
+  if (progress.stage === 'tiles') return 0.1 + 0.55 * ((progress.done ?? 0) / Math.max(progress.total ?? 1, 1));
+  // Overture's buildings come after the tiles' geometry.
+  if (progress.stage === 'buildings') return 0.75 + 0.14 * Math.min(1, Math.max(0, progress.fraction ?? 0));
+  return progress.stage === 'geometry' ? 0.75 : 0.9;
+}
+
 export function settingsKey(settings: RenderSettings, customFont: CustomFont | null): string {
   return JSON.stringify([settings, customFont ? fontFingerprint(customFont.data) : null]);
 }

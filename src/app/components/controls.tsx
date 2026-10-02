@@ -164,10 +164,16 @@ export function LockIcon(props: { locked: boolean }) {
   );
 }
 
-export function Check(props: { label: ReactNode; checked: boolean; onChange: (checked: boolean) => void; title?: string }) {
+export function Check(props: {
+  label: ReactNode;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  title?: string;
+  disabled?: boolean;
+}) {
   return (
-    <label className="check" title={props.title}>
-      <input type="checkbox" checked={props.checked} onChange={(e) => props.onChange(e.target.checked)} />
+    <label className={props.disabled ? 'check disabled' : 'check'} title={props.title}>
+      <input type="checkbox" checked={props.checked} disabled={props.disabled} onChange={(e) => props.onChange(e.target.checked)} />
       <span>{props.label}</span>
     </label>
   );

@@ -598,6 +598,12 @@ button.menu-toggle,
   border-radius: 2px;
 }
 
+.check.disabled,
+.check.disabled input {
+  color: var(--text-3);
+  cursor: default;
+}
+
 .slider {
   display: flex;
   align-items: center;

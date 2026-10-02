@@ -65,6 +65,9 @@ export interface SourceSettings {
   // 14 is full detail for OpenMapTiles.
   maxZoom: number;
   maxTiles: number;
+  // Adds the footprints Overture has that OSM lacks (ML and other datasets).
+  // Off by default, since it's a second, slower download.
+  overtureBuildings: boolean;
 }
 
 export interface PlotterSettings {
@@ -94,6 +97,7 @@ export const DEFAULT_SOURCE: SourceSettings = {
   tiles: 'https://tiles.openfreemap.org/planet',
   maxZoom: 14,
   maxTiles: 400,
+  overtureBuildings: false,
 };
 
 export const DEFAULT_FILTERS: FeatureFilters = {

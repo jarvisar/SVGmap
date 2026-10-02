@@ -13,7 +13,7 @@ import { OutputPanel } from './panels/OutputPanel.tsx';
 import { SizePanel } from './panels/SizePanel.tsx';
 import { TitlePanel } from './panels/TitlePanel.tsx';
 import { Preview } from './preview/Preview.tsx';
-import { requestRender, settingsKey, useRender } from './render.ts';
+import { renderFraction, requestRender, settingsKey, useRender } from './render.ts';
 import { toRenderSettings } from './settings.ts';
 import { settingsFromUrl, shareUrl } from './share.ts';
 import { selectSettings, useApp } from './store.ts';
@@ -119,8 +119,10 @@ export function App() {
   const generate = () => {
     setView('preview');
     setMenuOpen(false);
-    // A map with tiles missing is rendered again, which tries those tiles.
-    if (key !== renderedKey || status === 'error' || result?.stats.missingTiles) requestRender(renderSettings, customFont);
+    // A map with tiles or Overture's buildings missing is rendered again, which
+    // tries those again. Overture is only asked again a minute after it failed.
+    const incomplete = result?.stats.missingTiles || result?.stats.overtureFailed;
+    if (key !== renderedKey || status === 'error' || incomplete) requestRender(renderSettings, customFont);
   };
 
   const save = () => {
@@ -140,10 +142,13 @@ export function App() {
   let statusText = flash;
   let barWidth = 0;
   if (!statusText && status === 'working' && progress) {
-    const counted = progress.total ? ` ${progress.done} of ${progress.total}` : '';
+    const counted = progress.total
+      ? ` ${progress.done} of ${progress.total}`
+      : progress.fraction !== undefined
+        ? ` ${Math.round(progress.fraction * 100)}%`
+        : '';
     statusText = `${progress.message}${counted}`;
-    barWidth =
-      progress.stage === 'tiles' ? 10 + 55 * ((progress.done ?? 0) / Math.max(progress.total ?? 1, 1)) : progress.stage === 'geometry' ? 75 : 90;
+    barWidth = renderFraction(progress) * 100;
   } else if (!statusText && status === 'error') {
     statusText = 'Failed';
   } else if (!statusText && result && view === 'preview') {

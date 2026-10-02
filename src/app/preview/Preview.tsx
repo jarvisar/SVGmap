@@ -243,6 +243,11 @@ export function Preview(props: { onGenerate: () => void }) {
           {km(result.meta.widthM)} × {km(result.meta.heightM)} km
         </span>
         <span>{pathCount.toLocaleString()} paths</span>
+        {result.stats.overtureBuildings !== undefined ? (
+          <span>
+            {result.stats.overtureBuildings.toLocaleString()} {result.stats.overtureBuildings === 1 ? 'building' : 'buildings'} added from Overture
+          </span>
+        ) : null}
         {result.stats.coverage !== null ? <span>{(result.stats.coverage * 100).toFixed(1)}% of roads kept</span> : null}
         {result.stats.plotter ? (
           <span>
