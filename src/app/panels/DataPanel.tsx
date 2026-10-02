@@ -5,9 +5,11 @@ import { useApp } from '../store.ts';
 export function DataPanel() {
   const source = useApp((s) => s.source);
   const buildingsShown = useApp((s) => s.layers.buildings);
+  // Skipping sidewalks under Layers downloads from Overture too.
+  const sidewalks = useApp((s) => s.filters.paths.skipSidewalks && s.layers.paths);
   const set = useApp((s) => s.set);
   const custom = source.tiles !== DEFAULT_SOURCE.tiles;
-  const summary = `${custom ? 'Custom source' : 'OpenFreeMap'}${source.overtureBuildings ? ' + Overture' : ''}`;
+  const summary = `${custom ? 'Custom source' : 'OpenFreeMap'}${source.overtureBuildings || sidewalks ? ' + Overture' : ''}`;
   return (
     <Section title="Map data" summary={summary}>
       <TextField

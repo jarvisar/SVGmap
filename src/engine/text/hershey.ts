@@ -53,5 +53,8 @@ export function parseHershey(file: HersheyFile): StrokeFont {
   }
   // The data has no space. A Hershey space is about 16 units.
   glyphs[' '] = { advance: 16, strokes: [] };
+  // Or degree sign, which the coordinates in a subtitle need. It came out as
+  // a question mark. A small circle at cap height.
+  glyphs['°'] ??= { advance: 10, strokes: parseStrokes('M5,1 L3,2 2,4 3,6 5,7 7,6 8,4 7,2 5,1') };
   return { name: file.name, scale: 1 / UNITS_PER_EM, glyphs };
 }

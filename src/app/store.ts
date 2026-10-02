@@ -18,7 +18,17 @@ import type { LabelSettings } from '../engine/text/label.ts';
 import { fontFingerprint } from '../engine/text/fonts.ts';
 import type { CustomFont } from '../engine/text/loadFont.ts';
 import type { FeatureFilters } from '../engine/tiles/schema.ts';
-import { type CleanupPreset, type LaserPalette, type Settings, cleanupForPreset, defaultSettings, mergeSettings, migrateSettings } from './settings.ts';
+import {
+  type CleanupPreset,
+  type LaserPalette,
+  type Settings,
+  cleanupForPreset,
+  defaultSettings,
+  mergeSettings,
+  migrateSettings,
+  packPicks,
+  unpackPicks,
+} from './settings.ts';
 
 export type View = 'map' | 'preview';
 export type PreviewLook = 'material' | 'colors';
@@ -64,7 +74,7 @@ interface Actions {
   addRoutes: (items: RouteData[]) => void;
   updateRoute: (id: string, patch: Partial<Omit<RouteData, 'id'>>) => void;
   removeRoute: (id: string) => void;
-  // Everything except the place, the title text and the routes.
+  // Everything except the place, the title text, the routes and the picked roads.
   reset: () => void;
 }
 
@@ -182,6 +192,8 @@ export const useApp = create<AppState>()(
             area: s.area,
             label: { ...defaults.label, text: s.label.text },
             routes: { ...defaults.routes, items: s.routes.items },
+            roadRoutes: s.roadRoutes,
+            hiddenLines: s.hiddenLines,
             ...keepScale(s, defaults.product, defaults.border),
           };
         }),
@@ -193,9 +205,10 @@ export const useApp = create<AppState>()(
       partialize: (s) => {
         const { view: _view, ...rest } = s;
         void _view;
-        return Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== 'function')) as Partial<AppState>;
+        const saved = Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== 'function'));
+        return packPicks({ ...saved, roadRoutes: s.roadRoutes, hiddenLines: s.hiddenLines }) as Partial<AppState>;
       },
-      merge: (persisted, current) => mergeSettings(current, persisted),
+      merge: (persisted, current) => mergeSettings(current, unpackPicks(persisted)),
     },
   ),
 );
@@ -219,4 +232,6 @@ export const selectSettings = (s: AppState): Settings => ({
   routes: s.routes,
   source: s.source,
   plotter: s.plotter,
+  roadRoutes: s.roadRoutes,
+  hiddenLines: s.hiddenLines,
 });

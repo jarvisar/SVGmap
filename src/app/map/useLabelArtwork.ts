@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { download } from '../../engine/download.ts';
 import type { Layout } from '../../engine/layout/layout.ts';
-import { type LabelArtwork, type LabelSettings, type MapInfo, buildLabel } from '../../engine/text/label.ts';
+import { type LabelArtwork, type LabelSettings, type MapInfo, buildLabel, usesSubtitleFont } from '../../engine/text/label.ts';
 import type { FontLoader } from '../../engine/text/loadFont.ts';
+import type { LoadedFont } from '../../engine/text/outline.ts';
 import { getCustomFont } from '../customFont.ts';
 
 let loader: Promise<FontLoader> | null = null;
@@ -28,40 +29,85 @@ function fontLoader(): Promise<FontLoader> {
   return loader;
 }
 
+// The title's font, and the subtitle's when the title uses it.
+async function loadFonts(label: LabelSettings): Promise<[LoadedFont, LoadedFont]> {
+  const custom = getCustomFont();
+  const fonts = await fontLoader();
+  const subtitleId = label.subtitleFont || label.font;
+  const title = await fonts.load(label.font, custom);
+  return [title, subtitleId === label.font || !usesSubtitleFont(label) ? title : await fonts.load(subtitleId, custom)];
+}
+
 export interface LabelPreview {
   artwork: LabelArtwork | null;
   // Why the title can't be drawn, like not fitting inside the border.
   error: string | null;
 }
 
-// Lays out the title on the main thread, for the map overlay and for fitting
-// the map to a route.
+// Lays out the title once, for fitting the map to a route.
 export async function loadLabelArtwork(layout: Layout, label: LabelSettings, map: MapInfo | null = null): Promise<LabelPreview> {
   if (!label.enabled || !label.text.trim()) return { artwork: null, error: null };
-  const custom = getCustomFont();
-  const fonts = await fontLoader();
-  const [title, subtitle] = await Promise.all([fonts.load(label.font, custom), fonts.load(label.subtitleFont || label.font, custom)]);
+  const [title, subtitle] = await loadFonts(label);
   return buildLabel(layout, label, title, subtitle, map);
 }
 
-export function useLabelArtwork(layout: Layout | null, label: LabelSettings, customFontId: string | null, map: MapInfo | null = null): LabelPreview {
-  const [preview, setPreview] = useState<LabelPreview>({ artwork: null, error: null });
+export interface LiveLabel extends LabelPreview {
+  // Lays the title out with other settings straight away, for a drag. Null
+  // until the fonts are in.
+  layoutWith: ((label: LabelSettings) => LabelArtwork | null) | null;
+}
+
+interface Fonts {
+  key: string;
+  title: LoadedFont | null;
+  subtitle: LoadedFont | null;
+  error: string | null;
+}
+
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+// Lays out the title on the main thread, for the map overlay and dragging it
+// in the preview. Nothing is loaded while `active` is false.
+export function useLabelArtwork(active: boolean, layout: Layout | null, label: LabelSettings, customFontId: string | null, map: MapInfo | null = null): LiveLabel {
+  const wanted = active && label.enabled && label.text.trim() !== '';
+  const subtitleId = usesSubtitleFont(label) ? label.subtitleFont || label.font : label.font;
+  const key = `${label.font}|${subtitleId}|${customFontId ?? ''}`;
+  // The last fonts loaded stay in use while others load, so the title doesn't
+  // blink out when the font changes.
+  const [fonts, setFonts] = useState<Fonts | null>(null);
   useEffect(() => {
-    let active = true;
-    if (!layout) {
-      setPreview({ artwork: null, error: null });
-      return;
-    }
-    loadLabelArtwork(layout, label, map)
-      .then((result) => {
-        if (active) setPreview(result);
+    if (!wanted) return;
+    let live = true;
+    const custom = getCustomFont();
+    fontLoader()
+      .then((loaded) => Promise.all([loaded.load(label.font, custom), subtitleId === label.font ? null : loaded.load(subtitleId, custom)]))
+      .then(([title, subtitle]) => {
+        if (live) setFonts({ key, title, subtitle: subtitle ?? title, error: null });
       })
       .catch((error: unknown) => {
-        if (active) setPreview({ artwork: null, error: error instanceof Error ? error.message : String(error) });
+        if (live) setFonts({ key, title: null, subtitle: null, error: message(error) });
       });
     return () => {
-      active = false;
+      live = false;
     };
-  }, [layout, label, customFontId, map]);
-  return preview;
+    // The key covers both fonts and the loaded file.
+  }, [wanted, key]);
+
+  const build = useCallback(
+    (l: LabelSettings): LabelPreview => {
+      if (!layout || !fonts?.title) return { artwork: null, error: null };
+      try {
+        const { artwork, error } = buildLabel(layout, l, fonts.title, fonts.subtitle, map);
+        return { artwork, error };
+      } catch (error) {
+        return { artwork: null, error: message(error) };
+      }
+    },
+    [layout, fonts, map],
+  );
+  return useMemo(() => {
+    if (!wanted) return { artwork: null, error: null, layoutWith: null };
+    if (fonts?.error && fonts.key === key) return { artwork: null, error: fonts.error, layoutWith: null };
+    return { ...build(label), layoutWith: fonts?.title && layout ? (l: LabelSettings) => build(l).artwork : null };
+  }, [wanted, fonts, key, build, label, layout]);
 }

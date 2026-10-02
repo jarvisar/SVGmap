@@ -8,16 +8,18 @@ export interface GeoBounds {
   north: number;
 }
 
-// Only buildings are read here. The reader came from web3dmapcreator, where
-// it reads every Overture type for the 3D models, and it's still written per
-// type so fixes there carry across.
-export type OvertureType = 'building';
+// Buildings, and road segments for the sidewalks and crossings the map tiles
+// don't mark. The reader came from web3dmapcreator, where it reads every
+// Overture type for the 3D models, and it's still written per type so fixes
+// there carry across.
+export type OvertureType = 'building' | 'segment';
 
-export const OVERTURE_TYPES: readonly OvertureType[] = ['building'];
+export const OVERTURE_TYPES: readonly OvertureType[] = ['building', 'segment'];
 
 /** Plural names for progress messages, e.g. "Downloading buildings". */
 export const OVERTURE_LABEL: Record<OvertureType, string> = {
   building: 'buildings',
+  segment: 'road segments',
 };
 
 /** [lon, lat]. Overture data is 2D and the WKB reader drops any Z or M. */

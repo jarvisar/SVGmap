@@ -189,7 +189,9 @@ export function aerowayLineWidth(props: Props): number | null {
 export interface FeatureFilters {
   skipTunnels: boolean;
   roads: { service: boolean; parkingAisles: boolean; driveways: boolean; tracks: boolean; pedestrian: boolean; busways: boolean };
-  paths: { footways: boolean; cycleways: boolean; steps: boolean; bridleways: boolean };
+  // skipSidewalks leaves out the sidewalks and crossings Overture knows of
+  // (../sidewalks.ts). The tiles can't tell them from other paths.
+  paths: { footways: boolean; cycleways: boolean; steps: boolean; bridleways: boolean; skipSidewalks: boolean };
   railways: { minor: boolean; yards: boolean };
   waterways: { streams: boolean; rivers: boolean };
   water: { pools: boolean; intermittent: boolean };

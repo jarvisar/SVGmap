@@ -4,6 +4,7 @@ import type { AreaSpec } from './geo/transform.ts';
 import { DEFAULT_BORDER, type BorderSettings, type ProductSettings } from './layout/layout.ts';
 import { DEFAULT_CLEANUP, type CleanupSettings } from './lines/cleanup.ts';
 import type { HatchSettings } from './plotter.ts';
+import type { LonLatLine, RoadRoute } from './routes/picks.ts';
 import { DEFAULT_LABEL, type LabelSettings } from './text/label.ts';
 import type { FeatureFilters, FillLayerId, LineLayerId } from './tiles/schema.ts';
 
@@ -114,6 +115,10 @@ export interface RenderSettings {
   routes: RouteSettings;
   source: SourceSettings;
   plotter: PlotterSettings;
+  // Roads picked out in the preview, each road route a group of its own.
+  roadRoutes: RoadRoute[];
+  // Roads picked to be left out.
+  hiddenLines: LonLatLine[];
   // SVG title.
   title: string;
 }
@@ -136,7 +141,7 @@ export const DEFAULT_ROUTES: RouteSettings = {
 export const DEFAULT_FILTERS: FeatureFilters = {
   skipTunnels: true,
   roads: { service: true, parkingAisles: false, driveways: false, tracks: true, pedestrian: true, busways: true },
-  paths: { footways: true, cycleways: true, steps: true, bridleways: true },
+  paths: { footways: true, cycleways: true, steps: true, bridleways: true, skipSidewalks: false },
   railways: { minor: true, yards: false },
   waterways: { streams: true, rivers: true },
   water: { pools: false, intermittent: true },

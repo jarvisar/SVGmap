@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultRenderSettings } from '../defaults.ts';
 import { RenderService } from '../service.ts';
+import { usesSubtitleFont } from '../text/label.ts';
 import { TileSource } from './source.ts';
 
 const TEMPLATE = 'https://tiles.test/{z}/{x}/{y}.pbf';
@@ -101,5 +104,86 @@ describe('render service', () => {
     vi.stubGlobal('fetch', async () => new Response(null, { status: 404 }));
     const result = await new RenderService(async () => new ArrayBuffer(0)).render({ settings });
     expect(result.warnings).toEqual([expect.stringMatching(/tiles for this area are all empty/)]);
+  });
+});
+
+describe('a tile source that is down', () => {
+  const settings = () => {
+    const s = defaultRenderSettings('laser');
+    s.label = { ...s.label, enabled: false };
+    return s;
+  };
+
+  it('asks for a failing TileJSON as often as for one tile, not for every tile', async () => {
+    const s = settings();
+    s.source = { ...s.source, tiles: 'https://tiles.test/tiles.json' };
+    let lookups = 0;
+    vi.stubGlobal('fetch', async () => {
+      lookups++;
+      return new Response('down', { status: 500 });
+    });
+    const service = new RenderService(async () => new ArrayBuffer(0));
+    await expect(service.render({ settings: s })).rejects.toThrow(/Could not download any map data.*answered 500/);
+    expect(lookups).toBe(3);
+  });
+
+  it('gets past a TileJSON lookup that fails once', async () => {
+    const s = settings();
+    s.source = { ...s.source, tiles: 'https://tiles.test/tiles.json' };
+    let lookups = 0;
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url.endsWith('tiles.json')) return ++lookups === 1 ? new Response('blip', { status: 503 }) : Response.json({ tiles: [TEMPLATE] });
+      return new Response(null, { status: 404 });
+    });
+    const result = await new RenderService(async () => new ArrayBuffer(0)).render({ settings: s });
+    expect(lookups).toBe(2);
+    expect(result.warnings).toEqual([expect.stringMatching(/all empty/)]);
+  });
+
+  it('stops trying a host that never answers', async () => {
+    vi.useFakeTimers();
+    const s = settings();
+    s.source = { ...s.source, tiles: TEMPLATE };
+    let requests = 0;
+    vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+      requests++;
+      return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))));
+    });
+    const service = new RenderService(async () => new ArrayBuffer(0));
+    const failed = expect(service.render({ settings: s })).rejects.toThrow(/Could not download any map data.*Last error: No data from/);
+    // One round of tiles giving up, not three.
+    await vi.advanceTimersByTimeAsync(31_000);
+    await failed;
+    expect(requests).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('render service fonts', () => {
+  const fromPublic = async (path: string) => {
+    const bytes = readFileSync(join('public', path));
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  };
+
+  it("doesn't load a subtitle font for a title without a subtitle", async () => {
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 404 }));
+    for (const style of ['band', 'inset'] as const) {
+      const s = defaultRenderSettings('laser');
+      s.source = { ...s.source, tiles: TEMPLATE };
+      // A custom font picked for the subtitle, then the file gone and the subtitle cleared.
+      s.label = { ...s.label, style, subtitle: '', subtitleFont: 'custom' };
+      const result = await new RenderService(fromPublic).render({ settings: s, customFont: null });
+      expect(result.groups.some((g) => g.element === 'text')).toBe(true);
+    }
+  });
+
+  it('still loads it for the badge and legend, which letter their markings in it', () => {
+    const s = defaultRenderSettings('laser').label;
+    expect(usesSubtitleFont({ ...s, style: 'band', subtitle: '' })).toBe(false);
+    expect(usesSubtitleFont({ ...s, style: 'band', subtitle: 'ILLINOIS' })).toBe(true);
+    expect(usesSubtitleFont({ ...s, style: 'badge', subtitle: '', badgeCentre: 'compass' })).toBe(true);
+    expect(usesSubtitleFont({ ...s, style: 'badge', subtitle: '', badgeCentre: 'map' })).toBe(false);
+    expect(usesSubtitleFont({ ...s, style: 'legend', subtitle: '', legendScale: false, legendNorth: false })).toBe(false);
+    expect(usesSubtitleFont({ ...s, style: 'legend', subtitle: '' })).toBe(true);
+    expect(usesSubtitleFont({ ...s, style: 'box', subtitle: 'ILLINOIS' })).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { PLACE_PRESETS, subtitleForPlace } from '../../engine/presets.ts';
 import { Field, LockIcon, NumberInput, Section, Select, Slider } from '../components/controls.tsx';
 import { type Place, searchPlaces } from '../geocode.ts';
 import { scaleOf, useApp } from '../store.ts';
+import { asChange } from '../undo.ts';
 
 function formatCoord(value: number, positive: string, negative: string) {
   return `${Math.abs(value).toFixed(5)}° ${value >= 0 ? positive : negative}`;
@@ -49,8 +50,10 @@ function PlaceSearch() {
   }, [query]);
 
   const choose = (place: Place) => {
-    setArea({ lon: place.lon, lat: place.lat, widthM: place.widthM, bearing: 0 });
-    setLabel({ text: place.name.toUpperCase(), subtitle: subtitleForPlace(useApp.getState().label.subtitle, place.lat, place.lon) });
+    asChange(`Go to ${place.name}`, () => {
+      setArea({ lon: place.lon, lat: place.lat, widthM: place.widthM, bearing: 0 });
+      setLabel({ text: place.name.toUpperCase(), subtitle: subtitleForPlace(useApp.getState().label.subtitle, place.lat, place.lon) });
+    });
     picked.current = place.name;
     setQuery(place.name);
     setOpen(false);
@@ -148,7 +151,7 @@ export function LocationPanel() {
           value=""
           label="Examples"
           options={[{ value: '', label: 'Choose a city…' }, ...PLACE_PRESETS.map((p) => ({ value: p.id, label: p.name }))]}
-          onChange={(id) => id && applyPlace(id)}
+          onChange={(id) => id && asChange(`Go to ${PLACE_PRESETS.find((p) => p.id === id)?.name ?? 'place'}`, () => applyPlace(id))}
         />
       </Field>
       <div className="row">

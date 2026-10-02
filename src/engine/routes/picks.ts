@@ -1,0 +1,460 @@
+// Roads picked out in the preview: put in a road route of their own colour,
+// or left out. Not the same as the routes imported from GPX files, which are
+// drawn from the file. OpenFreeMap tiles merge ways with the same tags and
+// carry no names on the road lines, so a pick is kept as the line's geometry
+// in lon/lat, and each render gives it back the prepared lines lying along
+// it. That happens before the line cleanup, so a road route's pieces only
+// weld with each other and the cleanup never thins them out.
+
+import { lonLatToWorld, worldToLonLat } from '../geo/mercator.ts';
+import type { MapTransform } from '../geo/transform.ts';
+import type { Path, Point } from '../lines/geometry.ts';
+import type { PreparedLine } from '../prepare.ts';
+import type { LineLayerId } from '../settings.ts';
+
+export type LonLatLine = [number, number][];
+
+/** A colour of the user's own for roads they pick. */
+export interface RoadRoute {
+  id: string;
+  name: string;
+  /** #RRGGBB, the same in every mode. */
+  color: string;
+  /** Stroke width in print mode, mm. Laser and plotter use their hairline or pen. */
+  width: number;
+  lines: LonLatLine[];
+}
+
+export const MAX_ROAD_ROUTES = 12;
+export const MAX_PICKED_LINES = 4000;
+/** Points of all picked lines together, which keeps saved settings and links a sensible size. */
+export const MAX_PICKED_POINTS = 50_000;
+const MAX_POINTS = 2000;
+
+// A prepared line belongs to a pick when most of it lies this close to it.
+const SHARE = 0.7;
+const TOLERANCE_M = 4;
+const TOLERANCE_MIN_MM = 0.25;
+const CELL_MM = 2;
+
+/** Line layers a road can be picked from. */
+export const PICK_LAYERS: LineLayerId[] = ['roads', 'paths', 'railways', 'raceways'];
+
+interface Segment {
+  owner: number;
+  /** The pick it's part of. */
+  pick: number;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+}
+
+function segmentDistance(px: number, py: number, s: Segment): number {
+  const dx = s.bx - s.ax;
+  const dy = s.by - s.ay;
+  const length2 = dx * dx + dy * dy;
+  let t = length2 > 0 ? ((px - s.ax) * dx + (py - s.ay) * dy) / length2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (s.ax + dx * t), py - (s.ay + dy * t));
+}
+
+function toCanvas(line: LonLatLine, transform: MapTransform): Path {
+  return line.map(([lon, lat]) => transform.toCanvas(...lonLatToWorld(lon, lat, transform.zoom)));
+}
+
+/**
+ * The prepared lines lying along picked geometry: the road route's index for
+ * each, or -1 for a line left out. Picks nothing matched go in `missing`: off
+ * the map, on a layer that's off, or drawn too differently at this scale.
+ */
+export function pickedLines(
+  lines: PreparedLine[],
+  routes: RoadRoute[],
+  hidden: LonLatLine[],
+  transform: MapTransform,
+  missing: LonLatLine[] = [],
+): Map<PreparedLine, number> {
+  const out = new Map<PreparedLine, number>();
+  if (!routes.some((r) => r.lines.length) && !hidden.length) return out;
+  const tolerance = Math.max(TOLERANCE_MIN_MM, TOLERANCE_M / transform.metresPerMm);
+  const grid = new Map<number, Segment[]>();
+  const picks: LonLatLine[] = [];
+  const bounds = lineCells(lines);
+  const add = (line: LonLatLine, owner: number) => {
+    const path = toCanvas(line, transform);
+    const pick = picks.push(line) - 1;
+    if (!bounds) return;
+    for (let i = 1; i < path.length; i++) {
+      const s: Segment = { owner, pick, ax: path[i - 1][0], ay: path[i - 1][1], bx: path[i][0], by: path[i][1] };
+      segmentCells(s, tolerance, bounds, (key) => {
+        const cell = grid.get(key);
+        if (cell) cell.push(s);
+        else grid.set(key, [s]);
+      });
+    }
+  };
+  routes.forEach((route, i) => route.lines.forEach((line) => add(line, i)));
+  for (const line of hidden) add(line, -1);
+
+  const votes = new Map<number, number>();
+  const found = new Uint8Array(picks.length);
+  const nearest: Segment[] = [];
+  for (const line of lines) {
+    if (!PICK_LAYERS.includes(line.layer)) continue;
+    const samples = sample(line.path, 1);
+    if (!samples.length) continue;
+    votes.clear();
+    nearest.length = 0;
+    for (const [x, y] of samples) {
+      const cell = grid.get(cellKey(Math.floor(x / CELL_MM), Math.floor(y / CELL_MM)));
+      if (!cell) continue;
+      let best: Segment | null = null;
+      let bestDistance = tolerance;
+      for (const s of cell) {
+        const d = segmentDistance(x, y, s);
+        if (d > tolerance) continue;
+        // Every pick within reach counts as found, not only the nearest. A short
+        // pick whose ends touch its neighbours lost every sample to them and was
+        // said not to be on the map.
+        nearest.push(s);
+        if (d <= bestDistance) {
+          bestDistance = d;
+          best = s;
+        }
+      }
+      if (!best) continue;
+      votes.set(best.owner, (votes.get(best.owner) ?? 0) + 1);
+    }
+    let owner = -2;
+    let most = 0;
+    for (const [candidate, count] of votes) {
+      if (count > most) {
+        most = count;
+        owner = candidate;
+      }
+    }
+    if (owner !== -2 && most >= SHARE * samples.length) {
+      out.set(line, owner);
+      for (const s of nearest) if (s.owner === owner) found[s.pick] = 1;
+    }
+  }
+  picks.forEach((pick, i) => found[i] || missing.push(pick));
+  return out;
+}
+
+/** The path's points, and more along any segment longer than `spacing`. */
+function sample(path: Path, spacing: number): Point[] {
+  const out: Point[] = [];
+  for (let i = 0; i < path.length; i++) {
+    if (i > 0) {
+      const [ax, ay] = path[i - 1];
+      const [bx, by] = path[i];
+      const steps = Math.min(200, Math.floor(Math.hypot(bx - ax, by - ay) / spacing));
+      for (let k = 1; k < steps; k++) out.push([ax + ((bx - ax) * k) / steps, ay + ((by - ay) * k) / steps]);
+    }
+    out.push(path[i]);
+  }
+  return out;
+}
+
+function cellKey(x: number, y: number): number {
+  return (x + 2 ** 20) * 2 ** 21 + (y + 2 ** 20);
+}
+
+type CellBox = [number, number, number, number];
+
+/** The cells the pickable lines' points fall in, as a box of cell indices. Null with none. */
+function lineCells(lines: PreparedLine[]): CellBox | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const line of lines) {
+    if (!PICK_LAYERS.includes(line.layer)) continue;
+    for (const [x, y] of line.path) {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (!Number.isFinite(minX)) return null;
+  return [Math.floor(minX / CELL_MM), Math.floor(minY / CELL_MM), Math.floor(maxX / CELL_MM), Math.floor(maxY / CELL_MM)];
+}
+
+/**
+ * The cells within `tolerance` of a segment, column by column, and only
+ * inside `bounds`. Every cell of its box went in before, and a rail line
+ * picked on a regional map was millions of cells at 1:500, past what a Map
+ * holds, so every render failed.
+ */
+function segmentCells(s: Segment, tolerance: number, bounds: CellBox, fn: (key: number) => void): void {
+  const reach = tolerance + 1e-9;
+  const minX = Math.min(s.ax, s.bx);
+  const maxX = Math.max(s.ax, s.bx);
+  const dx = s.bx - s.ax;
+  const x0 = Math.max(bounds[0], Math.floor((minX - reach) / CELL_MM));
+  const x1 = Math.min(bounds[2], Math.floor((maxX + reach) / CELL_MM));
+  for (let x = x0; x <= x1; x++) {
+    // The stretch of the segment within reach of this column, and its height.
+    const from = Math.max(minX, x * CELL_MM - reach);
+    const to = Math.min(maxX, (x + 1) * CELL_MM + reach);
+    let low = Math.min(s.ay, s.by);
+    let high = Math.max(s.ay, s.by);
+    if (dx !== 0) {
+      const ya = s.ay + ((from - s.ax) / dx) * (s.by - s.ay);
+      const yb = s.ay + ((to - s.ax) / dx) * (s.by - s.ay);
+      low = Math.min(ya, yb);
+      high = Math.max(ya, yb);
+    }
+    const y0 = Math.max(bounds[1], Math.floor((low - reach) / CELL_MM));
+    const y1 = Math.min(bounds[3], Math.floor((high + reach) / CELL_MM));
+    for (let y = y0; y <= y1; y++) fn(cellKey(x, y));
+  }
+}
+
+/** Lines a preview can pick, before any cleanup, and how to take them back to lon/lat. */
+export interface PickLines {
+  /** Index into PICK_LAYERS, per line. */
+  layers: Uint8Array;
+  /** The road route each line is drawn in, -1 left out, -2 neither. */
+  owners: Int8Array;
+  classes: string[];
+  /** Where each line's points start, with the total at the end. */
+  starts: Uint32Array;
+  /** x, y in canvas mm. */
+  points: Float32Array;
+  transform: { zoom: number; cx: number; cy: number; wx: number; wy: number; cos: number; sin: number; mmPerUnit: number };
+}
+
+export function pickLines(lines: PreparedLine[], transform: MapTransform, owners: Map<PreparedLine, number> = new Map()): PickLines {
+  const picked = lines.filter((l) => PICK_LAYERS.includes(l.layer) && l.path.length >= 2);
+  const starts = new Uint32Array(picked.length + 1);
+  let total = 0;
+  picked.forEach((line, i) => {
+    starts[i] = total;
+    total += line.path.length;
+  });
+  starts[picked.length] = total;
+  const points = new Float32Array(total * 2);
+  picked.forEach((line, i) => {
+    let at = starts[i] * 2;
+    for (const [x, y] of line.path) {
+      points[at++] = x;
+      points[at++] = y;
+    }
+  });
+  const { zoom, cx, cy, wx, wy, cos, sin, mmPerUnit } = transform;
+  return {
+    layers: Uint8Array.from(picked, (l) => PICK_LAYERS.indexOf(l.layer)),
+    owners: Int8Array.from(picked, (l) => owners.get(l) ?? -2),
+    classes: picked.map((l) => l.cls),
+    starts,
+    points,
+    transform: { zoom, cx, cy, wx, wy, cos, sin, mmPerUnit },
+  };
+}
+
+/**
+ * Whether two picked lines are the same road: most of one lies within a few
+ * metres of the other, either way round. The same road picked at another
+ * zoom has other vertices.
+ */
+export function sameLine(a: LonLatLine, b: LonLatLine): boolean {
+  if (!a.length || !b.length) return false;
+  const [lon0, lat0] = a[0];
+  const kx = 111_320 * Math.cos((lat0 * Math.PI) / 180);
+  const ky = 110_574;
+  const local = (line: LonLatLine): Path => line.map(([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky]);
+  const covers = (x: Path, y: Path) => {
+    const samples = sample(x, 2);
+    // Past this many misses it can't be the same road, so the rest aren't looked at.
+    const allowed = samples.length - SHARE * samples.length;
+    let near = 0;
+    let missed = 0;
+    for (const [px, py] of samples) {
+      let hit = false;
+      for (let i = 1; i < y.length; i++) {
+        const s: Segment = { owner: 0, pick: 0, ax: y[i - 1][0], ay: y[i - 1][1], bx: y[i][0], by: y[i][1] };
+        if (segmentDistance(px, py, s) <= TOLERANCE_M) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) near++;
+      else if (++missed > allowed) return false;
+    }
+    return near >= SHARE * samples.length;
+  };
+  const pa = local(a);
+  const pb = local(b);
+  return covers(pa, pb) || covers(pb, pa);
+}
+
+/** The pick's canvas to world, as makeTransform's toWorld. */
+export function pickToWorld(t: PickLines['transform'], x: number, y: number): Point {
+  const u = (x - t.wx) / t.mmPerUnit;
+  const v = (y - t.wy) / t.mmPerUnit;
+  return [t.cx + u * t.cos - v * t.sin, t.cy + u * t.sin + v * t.cos];
+}
+
+/** A pick line back to lon/lat, rounded to about a decimetre. */
+export function pickLonLat(pick: PickLines, line: number): LonLatLine {
+  const { starts, points, transform } = pick;
+  const out: LonLatLine = [];
+  for (let p = starts[line]; p < starts[line + 1]; p++) {
+    const { lon, lat } = worldToLonLat(...pickToWorld(transform, points[p * 2], points[p * 2 + 1]), transform.zoom);
+    out.push([Math.round(lon * 1e6) / 1e6, Math.round(lat * 1e6) / 1e6]);
+  }
+  return out;
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+function lonLatLine(value: unknown): LonLatLine | null {
+  if (!Array.isArray(value) || value.length < 2) return null;
+  const out: LonLatLine = [];
+  for (const p of value.slice(0, MAX_POINTS)) {
+    if (!Array.isArray(p) || p.length !== 2) return null;
+    const [lon, lat] = p;
+    if (typeof lon !== 'number' || typeof lat !== 'number' || !Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+    // Picks stay in the frame of the map they were made on, so one past the
+    // antimeridian is a little over 180. Wrapped, it no longer matched its road.
+    if (Math.abs(lon) > 360 || Math.abs(lat) > 90) return null;
+    out.push([lon, lat]);
+  }
+  return out;
+}
+
+export function sanitizeLines(value: unknown, budget = { points: MAX_PICKED_POINTS }): LonLatLine[] {
+  if (!Array.isArray(value)) return [];
+  const out: LonLatLine[] = [];
+  for (const item of value) {
+    if (out.length >= MAX_PICKED_LINES) break;
+    const line = lonLatLine(item);
+    if (!line) continue;
+    if (line.length > budget.points) break;
+    budget.points -= line.length;
+    out.push(line);
+  }
+  return out;
+}
+
+export function pickedPoints(routes: readonly RoadRoute[], hidden: readonly LonLatLine[]): number {
+  let total = 0;
+  for (const route of routes) for (const line of route.lines) total += line.length;
+  for (const line of hidden) total += line.length;
+  return total;
+}
+
+/** Road routes with anything unknown or out of range dropped or clamped. */
+export function sanitizeRoutes(value: unknown, budget = { points: MAX_PICKED_POINTS }): RoadRoute[] {
+  if (!Array.isArray(value)) return [];
+  const out: RoadRoute[] = [];
+  const ids = new Set<string>();
+  for (const item of value) {
+    if (out.length >= MAX_ROAD_ROUTES) break;
+    if (typeof item !== 'object' || item === null) continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.id !== 'string' || !r.id || ids.has(r.id)) continue;
+    if (typeof r.color !== 'string' || !HEX.test(r.color)) continue;
+    ids.add(r.id);
+    const width = typeof r.width === 'number' && Number.isFinite(r.width) ? Math.min(5, Math.max(0.02, r.width)) : 0.6;
+    out.push({
+      id: r.id.slice(0, 64),
+      name: (typeof r.name === 'string' ? r.name.slice(0, 60).trim() : '') || 'Road route',
+      color: r.color.toUpperCase(),
+      width,
+      lines: sanitizeLines(r.lines, budget),
+    });
+  }
+  return out;
+}
+
+/**
+ * Stored lines that aren't any of `picked`. Comparing every pair froze the
+ * page for 13 s with 2,000 lines picked, so only lines whose boxes touch are.
+ */
+export function withoutLines(stored: LonLatLine[], picked: readonly LonLatLine[]): LonLatLine[] {
+  if (!stored.length || !picked.length) return stored;
+  const index = new LineIndex(picked);
+  return stored.filter((line) => !index.near(line).some((i) => sameLine(line, picked[i])));
+}
+
+type LineBox = [number, number, number, number];
+
+// Cells of about 200 m. A line whose box covers more than this many across
+// (a hand-made one, say) is checked against everything instead.
+const INDEX_DEG = 0.002;
+const INDEX_MAX_CELLS = 64;
+
+/** Lines by the grid cells their boxes cover, to find the ones near another line without looking at them all. */
+class LineIndex {
+  private readonly boxes: LineBox[];
+  private readonly cells = new Map<number, number[]>();
+  private readonly wide: number[] = [];
+
+  constructor(lines: readonly LonLatLine[]) {
+    this.boxes = lines.map(lineBox);
+    this.boxes.forEach((box, i) => {
+      const indexed = this.visit(box, (key) => {
+        const list = this.cells.get(key);
+        if (list) list.push(i);
+        else this.cells.set(key, [i]);
+      });
+      if (!indexed) this.wide.push(i);
+    });
+  }
+
+  /** Calls `fn` with each cell a box covers, or returns false when that's too many. */
+  private visit(box: LineBox, fn: (key: number) => void): boolean {
+    const x0 = Math.floor(box[0] / INDEX_DEG);
+    const x1 = Math.floor(box[2] / INDEX_DEG);
+    const y0 = Math.floor(box[1] / INDEX_DEG);
+    const y1 = Math.floor(box[3] / INDEX_DEG);
+    if (x1 - x0 >= INDEX_MAX_CELLS || y1 - y0 >= INDEX_MAX_CELLS) return false;
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) fn(cellKey(x, y));
+    return true;
+  }
+
+  /** Lines whose boxes touch this line's, in the order they were given. */
+  near(line: LonLatLine): number[] {
+    const box = lineBox(line);
+    const found = new Set<number>();
+    const take = (i: number) => {
+      if (!found.has(i) && boxesTouch(box, this.boxes[i])) found.add(i);
+    };
+    if (!this.visit(box, (key) => this.cells.get(key)?.forEach(take))) this.boxes.forEach((_, i) => take(i));
+    else this.wide.forEach(take);
+    return [...found].sort((a, b) => a - b);
+  }
+}
+
+// A little over sameLine's tolerance, so the box test never misses a match.
+const BOX_MARGIN_M = TOLERANCE_M + 1;
+
+function lineBox(line: LonLatLine): LineBox {
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lon, lat] of line) {
+    if (lon < minLon) minLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lon > maxLon) maxLon = lon;
+    if (lat > maxLat) maxLat = lat;
+  }
+  const dLat = BOX_MARGIN_M / 110_574;
+  const dLon = BOX_MARGIN_M / (111_320 * Math.max(0.01, Math.cos((Math.max(Math.abs(minLat), Math.abs(maxLat)) * Math.PI) / 180)));
+  return [minLon - dLon, minLat - dLat, maxLon + dLon, maxLat + dLat];
+}
+
+function boxesTouch(a: LineBox, b: LineBox): boolean {
+  return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+}
+
+/** An SVG group id for a road route: safe to write as it is and unique. */
+export function roadRouteGroupId(index: number): string {
+  return `road-route-${index + 1}`;
+}

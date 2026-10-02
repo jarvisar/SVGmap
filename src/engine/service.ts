@@ -8,8 +8,11 @@ import { type Layout, computeLayout } from './layout/layout.ts';
 import { clampRenderSettings } from './limits.ts';
 import { isMissingFromOsm, missingBuildings, projectFootprints, windowBounds } from './overture.ts';
 import { type Prepared, type TileData, type TilePlan, planTiles, prepareArea, tileKey, windowClipRect } from './prepare.ts';
+import type { Path } from './lines/geometry.ts';
 import type { RenderResult } from './result.ts';
 import type { RenderSettings } from './settings.ts';
+import { isSidepath, leaveOutSidepaths, projectSidepaths, sidepathTolerance } from './sidewalks.ts';
+import { usesSubtitleFont } from './text/label.ts';
 import { type CustomFont, FontLoader } from './text/loadFont.ts';
 import type { LoadedFont } from './text/outline.ts';
 import { TileCache, TileSource } from './tiles/source.ts';
@@ -21,7 +24,7 @@ export interface RenderRequest {
   customFont?: CustomFont | null;
 }
 
-export type RenderStage = 'tiles' | 'geometry' | 'buildings' | 'compose';
+export type RenderStage = 'tiles' | 'geometry' | 'buildings' | 'sidewalks' | 'compose';
 
 export interface RenderProgress {
   stage: RenderStage;
@@ -60,19 +63,90 @@ interface BuildingsEntry {
   entry: PreparedEntry;
 }
 
-// An Overture download in progress. A cancelled render stops waiting on it but
-// leaves it running, so changing a setting while it runs doesn't start it
-// over. It's only stopped once a render wants another area or no buildings.
-interface FootprintDownload {
+// Overture's sidewalks and crossings for one map window, in canvas mm, or why
+// there are none.
+interface SidewalkEntry {
   key: string;
-  controller: AbortController;
-  entry: Promise<FootprintEntry>;
-  // The newest render waiting on it, which also gets the last progress sent.
-  onProgress: (progress: RenderProgress) => void;
-  progress?: RenderProgress;
+  sidepaths: Path[];
+  warning?: string;
+  retryAt?: number;
+}
+
+// The prepared lines with the sidewalks and crossings left out.
+interface SidewalksLeftOut {
+  base: PreparedEntry;
+  sidewalks: SidewalkEntry;
+  entry: PreparedEntry;
+}
+
+// Overture downloads of one kind. A cancelled render stops waiting on one but
+// leaves it running, so changing a setting while it runs doesn't start it
+// over. It's only stopped once a render wants another area or none of it.
+class KeptDownload<T extends { key: string; retryAt?: number }> {
+  // The last one that finished.
+  private done: T | null = null;
+  private running: {
+    key: string;
+    controller: AbortController;
+    entry: Promise<T>;
+    // The newest render waiting on it, which also gets the last progress sent.
+    onProgress: (progress: RenderProgress) => void;
+    progress?: RenderProgress;
+  } | null = null;
+
+  /** Stops a download for any other key, or any download for null. */
+  keepOnly(key: string | null): void {
+    if (this.running && this.running.key !== key) {
+      this.running.controller.abort();
+      this.running = null;
+    }
+  }
+
+  /** What finished for this key, unless it failed and is due to be tried again. */
+  ready(key: string): T | null {
+    const done = this.done?.key === key ? this.done : null;
+    return done && (done.retryAt === undefined || Date.now() < done.retryAt) ? done : null;
+  }
+
+  wait(
+    key: string,
+    fetch: (signal: AbortSignal, onProgress: (progress: RenderProgress) => void) => Promise<T>,
+    onProgress: (progress: RenderProgress) => void,
+    isCancelled: () => boolean,
+  ): Promise<T> {
+    let download = this.running?.key === key ? this.running : null;
+    if (download) {
+      download.onProgress = onProgress;
+      if (download.progress) onProgress(download.progress);
+    } else {
+      this.keepOnly(null);
+      const started = { key, controller: new AbortController(), onProgress } as NonNullable<typeof this.running>;
+      const report = (progress: RenderProgress) => {
+        started.progress = progress;
+        started.onProgress(progress);
+      };
+      // Kept here rather than by the render, which may be cancelled by the time it's done.
+      started.entry = fetch(started.controller.signal, report).then((entry) => (this.done = entry));
+      const finished = () => {
+        if (this.running === started) this.running = null;
+      };
+      started.entry.then(finished, finished);
+      this.running = download = started;
+    }
+    const { entry } = download;
+    return new Promise((resolve, reject) => {
+      const watch = setInterval(() => {
+        if (!isCancelled()) return;
+        clearInterval(watch);
+        reject(new CancelledError());
+      }, 100);
+      entry.then(resolve, reject).finally(() => clearInterval(watch));
+    });
+  }
 }
 
 const buildingsKey = (preparedKey: string) => JSON.stringify([preparedKey, 'buildings']);
+const sidewalksKey = (preparedKey: string) => JSON.stringify([preparedKey, 'sidewalks']);
 
 // Yield so a newer request can cancel this one.
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -86,9 +160,10 @@ export class RenderService {
   private readonly tiles = new TileCache();
   private readonly sources = new Map<string, TileSource>();
   private prepared: PreparedEntry | null = null;
-  private footprints: FootprintEntry | null = null;
-  private download: FootprintDownload | null = null;
+  private readonly footprints = new KeptDownload<FootprintEntry>();
   private buildings: BuildingsEntry | null = null;
+  private readonly sidepaths = new KeptDownload<SidewalkEntry>();
+  private sidewalks: SidewalksLeftOut | null = null;
   private readonly fonts: FontLoader;
 
   constructor(loadAsset: (path: string) => Promise<ArrayBuffer>) {
@@ -114,11 +189,14 @@ export class RenderService {
     const plan = planTiles(settings.area, layout, settings.source);
     const key = JSON.stringify([settings.area, layout.window, plan.zoom, settings.source.tiles]);
     const withBuildings = settings.source.overtureBuildings && settings.layers.buildings;
-    if (!withBuildings || this.download?.key !== buildingsKey(key)) this.stopDownload();
+    const withoutSidewalks = settings.filters.paths.skipSidewalks && settings.layers.paths;
+    this.footprints.keepOnly(withBuildings ? buildingsKey(key) : null);
+    this.sidepaths.keepOnly(withoutSidewalks ? sidewalksKey(key) : null);
 
     let entry = this.prepared?.key === key ? this.prepared : null;
     if (!entry || entry.value.missing) entry = await this.prepare(key, plan, layout, settings.source.tiles, entry, onProgress, isCancelled);
     if (withBuildings) entry = await this.addBuildings(entry, layout, onProgress, isCancelled);
+    if (withoutSidewalks) entry = await this.leaveOutSidewalks(entry, sidewalksKey(key), layout, onProgress, isCancelled);
 
     const label = settings.label;
     let title: LoadedFont | null = null;
@@ -126,7 +204,8 @@ export class RenderService {
     if (label.enabled && label.text.trim()) {
       title = await this.fonts.load(label.font, request.customFont);
       const subtitleId = label.subtitleFont || label.font;
-      subtitle = subtitleId === label.font ? title : await this.fonts.load(subtitleId, request.customFont);
+      // A custom subtitle font left set with no subtitle failed every render once the file was gone.
+      subtitle = subtitleId === label.font || !usesSubtitleFont(label) ? title : await this.fonts.load(subtitleId, request.customFont);
     }
 
     onProgress({ stage: 'compose', message: 'Cleaning up lines' });
@@ -146,10 +225,9 @@ export class RenderService {
   ): Promise<PreparedEntry> {
     const { transform } = base.value;
     const key = buildingsKey(base.key);
-    let footprints = this.footprints?.key === key ? this.footprints : null;
-    if (!footprints || (footprints.retryAt !== undefined && Date.now() >= footprints.retryAt)) {
-      footprints = await this.waitForFootprints(key, transform, layout, onProgress, isCancelled);
-    }
+    const footprints =
+      this.footprints.ready(key) ??
+      (await this.footprints.wait(key, (signal, report) => this.fetchFootprints(key, transform, layout, signal, report), onProgress, isCancelled));
     if (this.buildings?.base === base && this.buildings.footprints === footprints) return this.buildings.entry;
     const tileBuildings = base.value.polygons.filter((p) => p.layer === 'buildings');
     const added = missingBuildings(footprints.footprints, tileBuildings);
@@ -166,48 +244,73 @@ export class RenderService {
     return entry;
   }
 
-  private stopDownload(): void {
-    this.download?.controller.abort();
-    this.download = null;
-  }
-
-  private waitForFootprints(
+  // The lines with Overture's sidewalks and crossings left out. Built on the
+  // entry it's given, with or without Overture's buildings, and sharing its
+  // unions, since only lines change.
+  private async leaveOutSidewalks(
+    base: PreparedEntry,
     key: string,
-    transform: MapTransform,
     layout: Layout,
     onProgress: (progress: RenderProgress) => void,
     isCancelled: () => boolean,
-  ): Promise<FootprintEntry> {
-    let download = this.download?.key === key ? this.download : null;
-    if (download) {
-      download.onProgress = onProgress;
-      if (download.progress) onProgress(download.progress);
-    } else {
-      this.stopDownload();
-      const started = { key, controller: new AbortController(), onProgress } as FootprintDownload;
-      const report = (progress: RenderProgress) => {
-        started.progress = progress;
-        started.onProgress(progress);
-      };
-      // Kept here rather than by the render, which may be cancelled by the time it's done.
-      started.entry = this.fetchFootprints(key, transform, layout, started.controller.signal, report).then(
-        (entry) => (this.footprints = entry),
-      );
-      const done = () => {
-        if (this.download === started) this.download = null;
-      };
-      started.entry.then(done, done);
-      this.download = download = started;
-    }
-    const { entry } = download;
-    return new Promise((resolve, reject) => {
-      const watch = setInterval(() => {
-        if (!isCancelled()) return;
-        clearInterval(watch);
-        reject(new CancelledError());
-      }, 100);
-      entry.then(resolve, reject).finally(() => clearInterval(watch));
+  ): Promise<PreparedEntry> {
+    const { transform } = base.value;
+    const sidewalks =
+      this.sidepaths.ready(key) ??
+      (await this.sidepaths.wait(key, (signal, report) => this.fetchSidepaths(key, transform, layout, signal, report), onProgress, isCancelled));
+    if (this.sidewalks?.base === base && this.sidewalks.sidewalks === sidewalks) return this.sidewalks.entry;
+    const { lines, removedMm } = leaveOutSidepaths(base.value.lines, sidewalks.sidepaths, sidepathTolerance(transform));
+    const value: Prepared = {
+      ...base.value,
+      lines,
+      warnings: sidewalks.warning ? [...base.value.warnings, sidewalks.warning] : base.value.warnings,
+      sidewalksLeftOutM: removedMm * transform.metresPerMm,
+      ...(sidewalks.retryAt !== undefined ? { overtureFailed: true } : {}),
+    };
+    const entry = { key: JSON.stringify([base.key, 'sidewalks']), value, memo: base.memo };
+    this.sidewalks = { base, sidewalks, entry };
+    return entry;
+  }
+
+  private async fetchSidepaths(
+    key: string,
+    transform: MapTransform,
+    layout: Layout,
+    signal: AbortSignal,
+    onProgress: (progress: RenderProgress) => void,
+  ): Promise<SidewalkEntry> {
+    const none = (warning: string, retry = false): SidewalkEntry => ({
+      key,
+      sidepaths: [],
+      warning,
+      ...(retry ? { retryAt: Date.now() + BUILDINGS_RETRY_MS } : {}),
     });
+    const bounds = windowBounds(transform, layout);
+    if (!bounds) return none("Sidewalks and crossings can't be left out of a map that crosses the 180th meridian.");
+    const message = 'Downloading sidewalks from Overture';
+    onProgress({ stage: 'sidewalks', message, fraction: 0 });
+    let reader: typeof import('./data/overture.ts') | undefined;
+    try {
+      reader = await import('./data/overture.ts');
+      const data = await reader.fetchOverture({
+        bounds,
+        types: ['segment'],
+        // Only their geometry is downloaded.
+        keep: (_type, props) => isSidepath(props),
+        signal,
+        onProgress: (progress) => onProgress({ stage: 'sidewalks', message, fraction: progress.fraction }),
+      });
+      return { key, sidepaths: projectSidepaths(data.features.segment, transform) };
+    } catch (error) {
+      if (signal.aborted || error instanceof CancelledError) throw new CancelledError();
+      if (reader && error instanceof reader.OvertureTooLargeError) {
+        return none(
+          `Sidewalks and crossings were left on the map: finding them would need ${Math.round(error.bytes / 1e6)} MB of Overture road data, over the ${reader.MAX_BYTES / 1e6} MB limit. Try a smaller map.`,
+        );
+      }
+      const reason = error instanceof Error ? error.message : String(error);
+      return none(`Sidewalks and crossings couldn't be downloaded from Overture, so they're still on the map. ${reason}`, true);
+    }
   }
 
   private async fetchFootprints(

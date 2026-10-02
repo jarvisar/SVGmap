@@ -4,6 +4,8 @@ import { defaultRenderSettings, defaultStyle } from '../engine/defaults.ts';
 import { fitNumber } from '../engine/limits.ts';
 import { DEFAULT_CLEANUP, type CleanupSettings } from '../engine/lines/cleanup.ts';
 import { DEFAULT_PRODUCT } from '../engine/presets.ts';
+import { type LonLatLine, type RoadRoute, sanitizeLines, sanitizeRoutes } from '../engine/routes/picks.ts';
+import { decodePolyline, encodePolyline } from '../engine/routes/polyline.ts';
 import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute, encodeRoute } from '../engine/routes/route.ts';
 import {
   LASER_PALETTES,
@@ -91,6 +93,8 @@ export function toRenderSettings(s: Settings): RenderSettings {
     routes: s.routes,
     source: s.source,
     plotter: s.plotter,
+    roadRoutes: s.roadRoutes,
+    hiddenLines: s.hiddenLines,
     title: s.label.text.trim() || 'Map',
   };
 }
@@ -132,6 +136,36 @@ function fitRoutes(patch: unknown): RouteData[] | undefined {
   return out;
 }
 
+// Picked roads are saved and shared as encoded polylines, like the imported
+// routes, which keeps a link with a few hundred roads picked to a few
+// kilobytes. Settings are saved on every change, every frame of a map drag
+// included, so the last result is kept: picks only change when edited.
+let packed: { routes: RoadRoute[]; hidden: LonLatLine[]; out: { roadRoutes: unknown[]; hiddenLines: string[] } } | null = null;
+
+export function packPicks(settings: { roadRoutes: RoadRoute[]; hiddenLines: LonLatLine[] }): Record<string, unknown> {
+  if (packed?.routes !== settings.roadRoutes || packed.hidden !== settings.hiddenLines) {
+    packed = {
+      routes: settings.roadRoutes,
+      hidden: settings.hiddenLines,
+      out: {
+        roadRoutes: settings.roadRoutes.map((route) => ({ ...route, lines: route.lines.map((line) => encodePolyline(line)) })),
+        hiddenLines: settings.hiddenLines.map((line) => encodePolyline(line)),
+      },
+    };
+  }
+  return { ...settings, ...packed.out };
+}
+
+// Polylines back to lon/lat. Lists of points are left for mergeSettings to check.
+export function unpackPicks(json: unknown): unknown {
+  if (!isObject(json)) return json;
+  const lines = (value: unknown) => (Array.isArray(value) ? value.map((line) => (typeof line === 'string' ? decodePolyline(line) : line)) : value);
+  const out = { ...json };
+  if (Array.isArray(json.roadRoutes)) out.roadRoutes = json.roadRoutes.map((route) => (isObject(route) ? { ...route, lines: lines(route.lines) } : route));
+  if ('hiddenLines' in json) out.hiddenLines = lines(json.hiddenLines);
+  return out;
+}
+
 // The area isn't in the engine's limits, so it's checked here. Other numbers
 // are clamped like the engine does, so a value typed past a slider's range
 // comes back as what was rendered instead of the default.
@@ -156,7 +190,10 @@ function fitSetting(path: string[], value: number): number | undefined {
 // into the range in engine/limits.ts.
 export function mergeSettings<T>(base: T, patch: unknown, path: string[] = []): T {
   if (patch === undefined) return base;
-  // The only list in the settings.
+  // Picked roads are lists of coordinates, cleaned on their own.
+  if (path.length === 1 && path[0] === 'roadRoutes') return sanitizeRoutes(patch) as T;
+  if (path.length === 1 && path[0] === 'hiddenLines') return sanitizeLines(patch) as T;
+  // The only other list in the settings.
   if (Array.isArray(base)) return ((path.join('.') === 'routes.items' ? fitRoutes(patch) : undefined) ?? base) as T;
   if (isObject(base)) {
     if (!isObject(patch)) return base;

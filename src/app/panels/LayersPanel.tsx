@@ -182,6 +182,20 @@ function WaterOptions() {
   );
 }
 
+function SidewalkOption() {
+  const skip = useApp((s) => s.filters.paths.skipSidewalks);
+  const setFilters = useApp((s) => s.setFilters);
+  return (
+    <>
+      <Check label="Skip sidewalks and crossings" checked={skip} onChange={(skipSidewalks) => setFilters((f) => ({ ...f, paths: { ...f.paths, skipSidewalks } }))} />
+      <div className="hint">
+        The map tiles don't say which paths are sidewalks, so this downloads the sidewalks and crossings Overture Maps has from
+        OpenStreetMap and leaves those out. Park paths and trails stay. It's a second download, so maps take longer.
+      </div>
+    </>
+  );
+}
+
 function DeckOptions() {
   const decks = useApp((s) => s.decks);
   const set = useApp((s) => s.set);
@@ -221,6 +235,7 @@ export function LayersPanel() {
         <LayerRow key={layer} layer={layer} fill={false} hasOptions={layer === 'raceways' || mode === 'print' || Boolean(FILTERS[layer])}>
           {layer === 'raceways' ? <div className="hint">Drawn exactly as mapped. Line cleanup skips them.</div> : null}
           <FilterChecks layer={layer} />
+          {layer === 'paths' ? <SidewalkOption /> : null}
           {mode === 'print' ? <LineWidth layer={layer} /> : null}
         </LayerRow>
       ))}

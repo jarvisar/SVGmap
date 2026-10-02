@@ -5,9 +5,9 @@
 // their bbox and the caller's filter, then the geometry of only those rows,
 // page by page. Features come back unclipped, as Overture stores them.
 //
-// This is web3dmapcreator's reader (src/core/data/), cut down to buildings
-// and the two columns SVGmap needs. The reading itself is unchanged, so fixes
-// there carry across.
+// This is web3dmapcreator's reader (src/core/data/), cut down to buildings,
+// road segments and the few columns SVGmap needs of them. The reading itself
+// is unchanged, so fixes there carry across.
 
 import { parquetMetadata, parquetMetadataAsync, parquetReadObjects, parquetSchema } from 'hyparquet';
 import type { AsyncBuffer, ColumnChunk, ColumnMetaData, FileMetaData, ParquetParsers, RowGroup, SchemaElement } from 'hyparquet';
@@ -70,6 +70,8 @@ const BASE_COLUMNS: readonly string[] = ['id', 'geometry', 'bbox'];
 // loses that property instead of failing.
 export const OVERTURE_COLUMNS: Record<OvertureType, readonly string[]> = {
   building: ['sources', 'is_underground'],
+  // What sidepathParts (../sidewalks.ts) looks at.
+  segment: ['subtype', 'subclass', 'subclass_rules'],
 };
 
 // Struct columns read only in part. Sources are a list of structs, and
@@ -82,6 +84,7 @@ const STRUCT_CHILDREN: Record<string, readonly string[]> = {
 // fetches the rest when a guess is short, which costs one more request.
 const FOOTER_BYTES_PER_GROUP: Record<OvertureType, number> = {
   building: 6000,
+  segment: 17000,
 };
 
 // Geometry stays raw WKB until the rows it belongs to are known to be kept.
@@ -155,6 +158,8 @@ export type OvertureFilter = (type: OvertureType, props: Record<string, unknown>
 
 export interface FetchOvertureOptions {
   bounds: GeoBounds;
+  /** Default buildings only. */
+  types?: readonly OvertureType[];
   /** Default the latest release. */
   release?: string;
   signal?: AbortSignal;
@@ -1110,7 +1115,7 @@ export async function fetchOverture(options: FetchOvertureOptions): Promise<Over
 async function readOverture(options: FetchOvertureOptions): Promise<OvertureData> {
   const { bounds, keep } = options;
   checkBounds(bounds);
-  const types = OVERTURE_TYPES;
+  const types = options.types ?? (['building'] as const);
   const maxBytes = options.maxBytes ?? MAX_BYTES;
   const budget: Budget = { types, maxType: maxBytes, maxTotal: maxBytes };
   const outer = options.signal;

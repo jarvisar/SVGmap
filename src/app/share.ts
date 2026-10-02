@@ -1,6 +1,6 @@
 // Share links hold the settings that differ from the defaults, as base64url JSON
 // in the URL hash.
-import { type Settings, defaultSettings, fillRouteColours, isObject, mergeSettings } from './settings.ts';
+import { type Settings, defaultSettings, fillRouteColours, isObject, mergeSettings, packPicks, unpackPicks } from './settings.ts';
 
 function diff(current: unknown, base: unknown): unknown {
   if (isObject(current) && isObject(base)) {
@@ -27,13 +27,13 @@ function fromBase64Url(value: string): string {
 }
 
 export function encodeSettings(settings: Settings): string {
-  return toBase64Url(JSON.stringify(diff(settings, defaultSettings()) ?? {}));
+  return toBase64Url(JSON.stringify(diff(packPicks(settings), packPicks(defaultSettings())) ?? {}));
 }
 
 // null when the text isn't a share link at all.
 export function decodeSettings(encoded: string): Settings | null {
   try {
-    return mergeSettings(defaultSettings(), fillRouteColours(JSON.parse(fromBase64Url(encoded))));
+    return mergeSettings(defaultSettings(), unpackPicks(fillRouteColours(JSON.parse(fromBase64Url(encoded)))));
   } catch {
     return null;
   }

@@ -4,6 +4,7 @@ import { toSvg } from '../engine/svg/writer.ts';
 import { CUSTOM_FONT_ID } from '../engine/text/fonts.ts';
 import { DEFAULT_LABEL } from '../engine/text/label.ts';
 import { getCustomFont, loadStoredFont } from './customFont.ts';
+import { flash, useFlash } from './flash.ts';
 import { MapView } from './map/MapView.tsx';
 import { CleanupPanel } from './panels/CleanupPanel.tsx';
 import { DataPanel } from './panels/DataPanel.tsx';
@@ -14,11 +15,13 @@ import { RoutesPanel } from './panels/RoutesPanel.tsx';
 import { SizePanel } from './panels/SizePanel.tsx';
 import { TitlePanel } from './panels/TitlePanel.tsx';
 import { Preview } from './preview/Preview.tsx';
+import { toPng } from './preview/png.ts';
 import { renderFraction, requestRender, settingsKey, useRender } from './render.ts';
 import { importRouteFiles, useImportNotice } from './routes.ts';
 import { toRenderSettings } from './settings.ts';
 import { settingsFromUrl, shareUrl } from './share.ts';
 import { selectSettings, useApp } from './store.ts';
+import { asChange, quietly, redoChange, startUndo, undoChange, useUndoLabels } from './undo.ts';
 
 function slug(text: string) {
   return (
@@ -31,8 +34,8 @@ function slug(text: string) {
   );
 }
 
-function download(name: string, content: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: 'image/svg+xml' }));
+function download(name: string, content: Blob) {
+  const url = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -42,9 +45,11 @@ function download(name: string, content: string) {
 
 function useStartup() {
   useEffect(() => {
+    startUndo();
     const shared = settingsFromUrl();
     if (shared) {
-      useApp.getState().set(shared);
+      // Undo goes back to the settings from before the link.
+      asChange('Open link', () => useApp.getState().set(shared));
       history.replaceState(null, '', window.location.pathname + window.location.search);
     }
     void loadStoredFont().then((font) => {
@@ -52,14 +57,39 @@ function useStartup() {
       app.setCustomFont(font);
       if (font) return;
       // No stored font (cleared storage or someone else's share link), so fall back.
-      if (app.label.font === CUSTOM_FONT_ID) app.setLabel({ font: DEFAULT_LABEL.font });
-      if (app.label.subtitleFont === CUSTOM_FONT_ID) app.setLabel({ subtitleFont: '' });
+      quietly(() => {
+        if (app.label.font === CUSTOM_FONT_ID) app.setLabel({ font: DEFAULT_LABEL.font });
+        if (useApp.getState().label.subtitleFont === CUSTOM_FONT_ID) app.setLabel({ subtitleFont: '' });
+      });
     });
   }, []);
 }
 
 function resetSettings() {
-  if (confirm('Reset all settings to the defaults? The location, title and routes are kept.')) useApp.getState().reset();
+  if (confirm('Reset all settings to the defaults? The location, title, routes and picked roads are kept.')) asChange('Reset settings', () => useApp.getState().reset());
+}
+
+const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? 'Cmd' : 'Ctrl';
+
+function UndoButtons() {
+  const { undo, redo } = useUndoLabels();
+  return (
+    <div className="button-group undo-buttons" role="group" aria-label="Undo and redo">
+      <button type="button" className="btn" aria-label={undo ? `Undo ${lower(undo)}` : 'Undo'} title={undo ? `Undo ${lower(undo)} (${MOD}+Z)` : 'Nothing to undo'} disabled={!undo} onClick={() => undoChange()}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4.5 2.5 2 5l2.5 2.5" />
+          <path d="M2 5h6.5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
+      </button>
+      <button type="button" className="btn" aria-label={redo ? `Redo ${lower(redo)}` : 'Redo'} title={redo ? `Redo ${lower(redo)} (${MOD}+Y)` : 'Nothing to redo'} disabled={!redo} onClick={() => redoChange()}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9.5 2.5 12 5 9.5 7.5" />
+          <path d="M12 5H5.5a3.5 3.5 0 0 0 0 7H8" />
+        </svg>
+      </button>
+    </div>
+  );
 }
 
 // Memoised because the map updates the area on every frame while it's dragged.
@@ -110,16 +140,10 @@ export function App() {
   const result = useRender((s) => s.result);
   const renderedKey = useRender((s) => s.renderedKey);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [flash, setFlash] = useState('');
-  const flashTimer = useRef(0);
+  const flashText = useFlash((s) => s.text);
+  const [savingPng, setSavingPng] = useState(false);
   const [dropping, setDropping] = useState(false);
   const dropTimer = useRef(0);
-
-  const showFlash = (text: string) => {
-    setFlash(text);
-    clearTimeout(flashTimer.current);
-    flashTimer.current = window.setTimeout(() => setFlash(''), 2500);
-  };
 
   // A route file dropped anywhere on the page. dragleave fires for every child
   // the pointer crosses, so the overlay goes when dragover stops coming instead.
@@ -141,7 +165,7 @@ export function App() {
     const files = Array.from(e.dataTransfer.files);
     const { added, errors } = await importRouteFiles(files);
     useImportNotice.setState({ errors });
-    if (added.length) showFlash(added.length === 1 ? `Added ${added[0]}` : `Added ${added.length} routes`);
+    if (added.length) flash(added.length === 1 ? `Added ${added[0]}` : `Added ${added.length} routes`);
   };
 
   // The preview follows the settings while it is on screen.
@@ -161,19 +185,31 @@ export function App() {
   };
 
   const save = () => {
-    if (result) download(`${slug(result.meta.title)}-${result.mode}.svg`, toSvg(result));
+    if (result) download(`${slug(result.meta.title)}-${result.mode}.svg`, new Blob([toSvg(result)], { type: 'image/svg+xml' }));
+  };
+
+  const savePng = async () => {
+    if (!result) return;
+    setSavingPng(true);
+    try {
+      download(`${slug(result.meta.title)}-${result.mode}.png`, await toPng(result, useApp.getState().previewLook));
+    } catch (error) {
+      flash(error instanceof Error ? error.message : 'Could not save the PNG');
+    } finally {
+      setSavingPng(false);
+    }
   };
 
   const share = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl(settings));
-      showFlash('Link copied');
+      flash('Link copied');
     } catch {
-      showFlash('Could not copy the link');
+      flash('Could not copy the link');
     }
   };
 
-  let statusText = flash;
+  let statusText = flashText;
   let barWidth = 0;
   if (!statusText && status === 'working' && progress) {
     const counted = progress.total
@@ -216,6 +252,7 @@ export function App() {
         <div className="status" aria-live="polite">
           {statusText}
         </div>
+        <UndoButtons />
         <button type="button" className="btn share-button" onClick={share}>
           Share
         </button>
@@ -224,9 +261,20 @@ export function App() {
             Generate
           </button>
         ) : (
-          <button type="button" className="btn btn-primary" onClick={save} disabled={!result || status !== 'done' || key !== renderedKey}>
-            Download SVG
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn"
+              title="Save a 300 DPI image of the preview"
+              onClick={() => void savePng()}
+              disabled={!result || status !== 'done' || key !== renderedKey || savingPng}
+            >
+              PNG
+            </button>
+            <button type="button" className="btn btn-primary" onClick={save} disabled={!result || status !== 'done' || key !== renderedKey}>
+              Download SVG
+            </button>
+          </>
         )}
       </header>
       <Sidebar />
@@ -236,7 +284,7 @@ export function App() {
         <div className={view === 'map' ? 'map-holder' : 'map-holder hidden'}>
           <MapView />
         </div>
-        {view === 'preview' ? <Preview onGenerate={generate} /> : null}
+        {view === 'preview' ? <Preview onGenerate={generate} upToDate={key === renderedKey} /> : null}
       </main>
       {dropping ? (
         <div className="drop-overlay">

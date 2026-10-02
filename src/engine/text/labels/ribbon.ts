@@ -68,13 +68,14 @@ export function layoutRibbonLabel(layout: Layout, s: LabelSettings, title: TextG
   const [bx, by, bw, bh] = boundsOf(all);
   const limit = insetShape(layout.labelAnchor, s.gap);
   // Long text shrinks the whole ribbon. The line width stays the same.
-  const fit = fitScale(limit, s.position, (f) => [bw * f, bh * f]);
-  const placed = fit > 0 ? placeBlock(limit, s.position, bw * fit, bh * fit) : null;
+  const fit = fitScale(limit, (f) => [bw * f, bh * f]);
+  const placed = fit > 0 ? placeBlock(limit, layout.labelAnchor, s, bw * fit, bh * fit) : null;
   if (!placed) throw new LabelError('The ribbon does not fit inside the border. Make it smaller or shorten the text.');
-  const at = ([x, y]: Point): Point => [placed[0] + (x - bx) * fit, placed[1] + (y - by) * fit];
+  const [left, top] = placed.at;
+  const at = ([x, y]: Point): Point => [left + (x - bx) * fit, top + (y - by) * fit];
   const shift = (p: Path): Path => p.map(at);
   return artwork({
-    knockout: [placed[0], placed[1], bw * fit, bh * fit],
+    knockout: [left, top, bw * fit, bh * fit],
     clear: all.map(shift),
     text: place(letters, at),
     solid: (s.solid ? [frontRing, ...bodyRings] : foldRings).map(shift),
@@ -82,5 +83,7 @@ export function layoutRibbonLabel(layout: Layout, s: LabelSettings, title: TextG
     frame: frameLines.map(shift),
     frameWidth: s.borderWidth * k,
     frameLabel: 'Ribbon',
+    offset: placed.offset,
+    scale: fit,
   });
 }

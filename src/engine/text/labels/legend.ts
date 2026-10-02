@@ -90,14 +90,14 @@ export function layoutLegendLabel(
     return { T, S, L, padX, padY, titleRow, subRow, barH, rowH, arrowSlot, arrowSpace, contentW, gapSub, gapRule, boxW, boxH };
   };
   const limit = insetShape(layout.labelAnchor, s.gap);
-  const fit = fitScale(limit, s.position, (f) => {
+  const fit = fitScale(limit, (f) => {
     const m = measure(f);
     return [m.boxW, m.boxH];
   });
   const { T, S, L, padX, padY, titleRow, subRow, barH, rowH, arrowSlot, arrowSpace, contentW, gapSub, gapRule, boxW, boxH } = measure(fit);
-  const placed = fit > 0 ? placeBlock(limit, s.position, boxW, boxH) : null;
+  const placed = fit > 0 ? placeBlock(limit, layout.labelAnchor, s, boxW, boxH) : null;
   if (!placed) throw new LabelError('The legend does not fit inside the border. Make it smaller or shorten the text.');
-  const [left, top] = placed;
+  const [left, top] = placed.at;
   const x0 = left + border + padX;
   let y = top + border + padY;
 
@@ -213,5 +213,7 @@ export function layoutLegendLabel(
     frame,
     frameWidth: lineWidth,
     frameLabel: 'Legend',
+    offset: placed.offset,
+    scale: fit,
   });
 }

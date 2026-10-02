@@ -13,6 +13,7 @@ import { decodeRoute, encodeRoute } from '../engine/routes/route.ts';
 import type { RouteData } from '../engine/settings.ts';
 import { loadLabelArtwork } from './map/useLabelArtwork.ts';
 import { useApp } from './store.ts';
+import { asChange } from './undo.ts';
 
 export const ROUTE_ACCEPT = '.gpx,.kml,.kmz,.tcx,.geojson,.json';
 const MAX_ROUTES = 50;
@@ -47,8 +48,12 @@ export async function importRouteFiles(files: Iterable<File>): Promise<ImportRes
     }
   }
   if (added.length > 0) {
-    useApp.getState().addRoutes(added);
-    await fitMapToRoutes(false);
+    // Worked out first, so adding them and moving the map undo as one.
+    const area = await fittedArea([...useApp.getState().routes.items, ...added], false);
+    asChange(added.length === 1 ? 'Add route' : 'Add routes', () => {
+      useApp.getState().addRoutes(added);
+      if (area) useApp.getState().setArea(area);
+    });
   }
   return { added: added.map((r) => r.name), errors };
 }
@@ -60,20 +65,27 @@ export function visibleRouteLines(items: readonly RouteData[]): LonLat[][] {
 // Centres the map on the visible routes and sizes it so they fill the window,
 // beside the title if there's room. With the scale locked it only moves the map.
 export async function fitMapToRoutes(rotate: boolean): Promise<boolean> {
+  const area = await fittedArea(useApp.getState().routes.items, rotate);
+  if (!area) return false;
+  useApp.getState().setArea(area);
+  return true;
+}
+
+async function fittedArea(items: readonly RouteData[], rotate: boolean): Promise<AreaSpec | null> {
   const s = useApp.getState();
-  const lines = visibleRouteLines(s.routes.items);
-  if (lines.length === 0) return false;
+  const lines = visibleRouteLines(items);
+  if (lines.length === 0) return null;
   let layout;
   try {
     layout = computeLayout(s.product, s.border);
   } catch {
-    return false;
+    return null;
   }
   // Without the fonts the title's size is unknown, so it's fitted to the whole window.
   const artwork = (await loadLabelArtwork(layout, s.label).catch(() => null))?.artwork ?? null;
   const { window } = layout;
   const reach = s.routes.markers ? Math.max(s.routes.markerSize * 0.6, s.routes.width / 2) : s.routes.width / 2;
-  const area = fitArea(lines, {
+  return fitArea(lines, {
     window,
     // When the map only shows inside the letters, the route goes in them.
     avoid: artwork && !artwork.keep ? artwork.knockout : null,
@@ -83,9 +95,6 @@ export async function fitMapToRoutes(rotate: boolean): Promise<boolean> {
     margin: Math.max(2, Math.min(window.w, window.h) * 0.04) + reach + s.routes.gap,
     widthM: s.scaleLocked ? s.area.widthM : undefined,
   });
-  if (!area) return false;
-  useApp.getState().setArea(area);
-  return true;
 }
 
 // Share of the route points outside the map window, 0 to 1. Runs while the

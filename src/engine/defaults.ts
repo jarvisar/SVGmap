@@ -39,6 +39,8 @@ export function defaultRenderSettings(mode: OutputMode = 'laser'): RenderSetting
     routes: DEFAULTS.routes,
     source: DEFAULTS.source,
     plotter: DEFAULTS.plotter,
+    roadRoutes: [],
+    hiddenLines: [],
     title: place.name,
   });
 }

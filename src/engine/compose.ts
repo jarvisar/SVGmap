@@ -25,6 +25,7 @@ import { contourFill, hatchWith, orderForPlotting, outlines } from './plotter.ts
 import type { Prepared, PreparedLine, PreparedPolygon } from './prepare.ts';
 import type { OutputGroup, OutputPath, PlotterStats, RenderResult } from './result.ts';
 import { buildRoutes, makeRouteClearer } from './routes/draw.ts';
+import { type LonLatLine, pickLines, pickedLines, roadRouteGroupId } from './routes/picks.ts';
 import {
   type ElementId,
   FILL_LAYERS,
@@ -59,6 +60,8 @@ interface Draft {
   label: string;
   kind: 'fill' | 'stroke';
   strokeWidth: number;
+  // A road route's own colour, instead of its element's.
+  color?: string;
   fill?: Paths64;
   // Split by class when print mode gives each road class its own width.
   lines?: { cls?: string; width?: number; paths: Path[] }[];
@@ -136,6 +139,7 @@ export function compose(
   // Title
   const map = { metresPerMm: prepared.transform.metresPerMm, bearing: s.area.bearing };
   const built = buildLabel(layout, s.label, fonts.title, fonts.subtitle, map);
+  warnings.push(...built.warnings);
   if (built.error) warnings.push(built.error);
   const label: LabelArtwork | null = built.artwork;
   const titleStroke = plotter ? pen : s.mode === 'laser' ? hairline : 0.3;
@@ -181,10 +185,15 @@ export function compose(
   };
 
   const acceptedLines = prepared.lines.filter((l) => layerOn[l.layer] && acceptLine(l, s.filters));
+  // Roads picked in the preview: a road route's index, or -1 when left out.
+  const roadRoutes = s.roadRoutes ?? [];
+  const missingPicks: LonLatLine[] = [];
+  const picked = pickedLines(acceptedLines, roadRoutes, s.hiddenLines ?? [], prepared.transform, missingPicks);
+  const drawnLines = picked.size ? acceptedLines.filter((l) => !picked.has(l)) : acceptedLines;
   let waterGaps: Paths64 = [];
   if (s.water.bridgeGap > 0 && layerOn.water) {
     const bridges = acceptedLines
-      .filter((l) => l.flags & FLAG.bridge && (l.layer === 'roads' || l.layer === 'railways'))
+      .filter((l) => l.flags & FLAG.bridge && (l.layer === 'roads' || l.layer === 'railways') && picked.get(l) !== -1)
       .map((l) => l.path);
     waterGaps = bufferLines(bridges, s.water.bridgeGap, false);
   }
@@ -227,7 +236,7 @@ export function compose(
     key: { layer: l.layer, cls: l.cls },
     path: l.path,
   });
-  const cleanupInput = acceptedLines.filter((l) => l.layer !== 'raceways').map(toItem);
+  const cleanupInput = drawnLines.filter((l) => l.layer !== 'raceways').map(toItem);
   const edgeTolerance = Math.max(s.cleanup.weldTolerance, 0.001);
   const cleaned = cleanupLines(cleanupInput, s.cleanup, {
     groupOf,
@@ -255,10 +264,18 @@ export function compose(
   }
   // Racetracks skip cleanup and are drawn as mapped. Welding only rejoins tile seams.
   const raceways = weldPaths(
-    acceptedLines.filter((l) => l.layer === 'raceways').map(toItem),
+    drawnLines.filter((l) => l.layer === 'raceways').map(toItem),
     Math.max(s.cleanup.weldTolerance, 0.01),
     { groupFn: groupOf },
   ).items;
+  // Road routes are drawn as picked too, their pieces welded into one another only.
+  const roadRouteItems = roadRoutes.map((_, index) =>
+    weldPaths(
+      acceptedLines.filter((l) => picked.get(l) === index).map(toItem),
+      Math.max(s.cleanup.weldTolerance, 0.01),
+      { groupFn: () => 'road-route' },
+    ).items,
+  );
   lap('lines');
 
   const byLayer = new Map<LineLayerId, LineItem<LineKey>[]>();
@@ -340,6 +357,22 @@ export function compose(
       });
     }
   }
+
+  // Over the roads, each in its own colour. They keep the same gap from an
+  // imported route as the other lines.
+  roadRoutes.forEach((route, index) => {
+    const items = roadRouteItems[index];
+    if (!items.length) return;
+    drafts.push({
+      id: roadRouteGroupId(index),
+      element: 'roads',
+      label: route.name,
+      kind: 'stroke',
+      strokeWidth: plotter ? pen : s.mode === 'laser' ? hairline : Math.min(5, Math.max(0.02, route.width)),
+      color: route.color,
+      lines: [{ paths: clipLabel(clearRoute(items.map((i) => i.path))) }],
+    });
+  });
 
   if (route) {
     if (routeDraw === 'line') {
@@ -440,7 +473,7 @@ export function compose(
   lap('style');
 
   // Plotter order
-  const colorOf = (d: Draft) => style.colors[d.element];
+  const colorOf = (d: Draft) => d.color ?? style.colors[d.element];
   let plotterStats: PlotterStats | null = null;
   if (plotter) {
     // The file puts every layer of one pen together, so the pen travels in that order.
@@ -538,6 +571,7 @@ export function compose(
       missingTiles: prepared.missing,
       bytes: prepared.bytes,
       ...(prepared.overtureBuildings !== undefined ? { overtureBuildings: prepared.overtureBuildings } : {}),
+      ...(prepared.sidewalksLeftOutM !== undefined ? { sidewalksLeftOutM: prepared.sidewalksLeftOutM } : {}),
       ...(prepared.overtureFailed ? { overtureFailed: true } : {}),
       cleanup: s.cleanup.enabled ? cleaned.stats : null,
       coverage,
@@ -552,8 +586,11 @@ export function compose(
       widthM: prepared.widthM,
       heightM: prepared.heightM,
       scale: Math.round(prepared.transform.metresPerMm * 1000),
-      attribution: prepared.overtureBuildings && layerOn.buildings ? `${ATTRIBUTION}, Overture Maps Foundation` : ATTRIBUTION,
+      attribution:
+        (prepared.overtureBuildings && layerOn.buildings) || prepared.sidewalksLeftOutM ? `${ATTRIBUTION}, Overture Maps Foundation` : ATTRIBUTION,
       generated: new Date().toISOString(),
     },
+    pick: pickLines(acceptedLines, prepared.transform, picked),
+    ...(missingPicks.length ? { missingPicks } : {}),
   };
 }

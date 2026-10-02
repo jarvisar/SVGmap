@@ -104,7 +104,8 @@ export class TileSource {
     });
   }
 
-  get(tile: TileId, signal?: AbortSignal): Promise<ArrayBuffer | null> {
+  /** The TileJSON looked up, or the error it gave. */
+  ready(): Promise<Fetcher> {
     if (!this.fetcher) {
       this.fetcher = this.makeFetcher();
       // Forget a failed lookup so the next render can retry.
@@ -112,7 +113,11 @@ export class TileSource {
         this.fetcher = null;
       });
     }
-    const fetcher = this.fetcher;
+    return this.fetcher;
+  }
+
+  get(tile: TileId, signal?: AbortSignal): Promise<ArrayBuffer | null> {
+    const fetcher = this.ready();
     return fetcher.then((fetchTile) => fetchTile(tile, signal)).catch((error: unknown) => {
       // The archive keeps its header read, failed or stalled, for good. A new
       // one reads the header again.
@@ -156,6 +161,26 @@ export class TileCache {
     let failures = 0;
     let lastError: unknown;
     let next = 0;
+    // The TileJSON is looked up here, tried as often as one tile would be.
+    // Left to each tile, every attempt at every tile asked for it again: 643
+    // requests for one render.
+    if (tiles.some((tile) => !this.entries.has(`${sourceKey}|${tile.z}/${tile.x}/${tile.y}`))) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await source.ready();
+          break;
+        } catch (error) {
+          if (attempt + 1 >= attempts || isCancelled()) {
+            throw new Error(`${NO_DATA} Last error: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        }
+      }
+    }
+    // Attempts failing one after another with nothing coming through mean the
+    // host is down, and the rest aren't tried. Retrying every tile against a
+    // host that never answered took 91 s to fail a map of four tiles.
+    const health: Health = { failedInRow: 0, down: false, limit: Math.max(3, Math.min(6, tiles.length)) };
     const work = async () => {
       while (next < tiles.length && !isCancelled()) {
         const tile = tiles[next++];
@@ -166,10 +191,12 @@ export class TileCache {
           this.entries.delete(key);
           this.entries.set(key, value);
           out.set(tileId, value);
+        } else if (health.down) {
+          failures++;
         } else {
           let pending = this.inflight.get(key);
           if (!pending) {
-            pending = this.fetchWithRetry(source, tile, attempts);
+            pending = this.fetchWithRetry(source, tile, attempts, health);
             this.inflight.set(key, pending);
           }
           try {
@@ -191,21 +218,32 @@ export class TileCache {
     if (failures > 0 && failures === tiles.length) {
       // The reason tells a style URL or a missing API key apart from being offline.
       const reason = lastError instanceof Error ? lastError.message : String(lastError);
-      throw new Error(`Could not download any map data. Check your connection, or the tile source under Map data. Last error: ${reason}`);
+      throw new Error(`${NO_DATA} Last error: ${reason}`);
     }
     return out;
   }
 
-  private async fetchWithRetry(source: TileSource, tile: TileId, attempts: number): Promise<ArrayBuffer | null> {
+  private async fetchWithRetry(source: TileSource, tile: TileId, attempts: number, health: Health): Promise<ArrayBuffer | null> {
     let lastError: unknown;
-    for (let attempt = 0; attempt < attempts; attempt++) {
+    for (let attempt = 0; attempt < attempts && !(attempt > 0 && health.down); attempt++) {
       try {
-        return await source.get(tile);
+        const value = await source.get(tile);
+        health.failedInRow = 0;
+        return value;
       } catch (error) {
         lastError = error;
-        if (attempt + 1 < attempts) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        if (++health.failedInRow >= health.limit) health.down = true;
+        if (attempt + 1 < attempts && !health.down) await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
       }
     }
     throw lastError;
   }
+}
+
+const NO_DATA = 'Could not download any map data. Check your connection, or the tile source under Map data.';
+
+interface Health {
+  failedInRow: number;
+  down: boolean;
+  limit: number;
 }

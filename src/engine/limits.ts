@@ -89,6 +89,14 @@ export const LIMITS: Record<string, Limit> = {
   'label.ribbonArch': { min: 0, max: 100 },
   'label.badgeDiameter': { min: 10, max: 300 },
   'label.lettersGap': { min: 0, max: 10 },
+  // Shares of the space inside the border, or of the band.
+  'label.offsetX': { min: -1, max: 1 },
+  'label.offsetY': { min: -1, max: 1 },
+  'label.bandOffsetX': { min: -1, max: 1 },
+  'label.bandOffsetY': { min: -1, max: 1 },
+  // 0 sizes the box to the text.
+  'label.boxWidth': { min: 0, max: 2000 },
+  'label.boxHeight': { min: 0, max: 2000 },
 };
 
 function limitKey(path: readonly string[]): string[] {

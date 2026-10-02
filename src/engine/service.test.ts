@@ -89,7 +89,7 @@ function answer(options: FetchOvertureOptions): OvertureData {
   return {
     release: 'test',
     bounds: options.bounds,
-    features: { building },
+    features: { building, segment: [] },
     bytes: 1000,
     stats: {} as OvertureData['stats'],
   };
@@ -238,7 +238,7 @@ describe('buildings from Overture', () => {
 
   it("shares the tiles' unions when nothing is added", async () => {
     type Internals = { buildings: { base: { memo: unknown }; entry: { memo: unknown } } };
-    fetchMock.mockImplementation(async (options) => ({ ...answer(options), features: { building: [] } }));
+    fetchMock.mockImplementation(async (options) => ({ ...answer(options), features: { building: [], segment: [] } }));
     const svc = service();
     const off = await svc.render({ settings: settings((s) => (s.source.overtureBuildings = false)) });
     const on = await svc.render({ settings: settings() });

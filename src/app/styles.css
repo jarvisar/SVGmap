@@ -1648,3 +1648,213 @@ button.menu-toggle,
   width: 22px;
   height: 15px;
 }
+
+/* Moving and resizing the title, on the map and in the preview */
+.title-grab,
+.title-frame {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.title-frame {
+  stroke-dasharray: none;
+}
+
+.title-handle {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* Undo and redo in the top bar */
+.topbar .undo-buttons {
+  flex: none;
+  box-shadow: none;
+}
+
+.topbar .undo-buttons .btn {
+  padding: 0 8px;
+}
+
+.topbar .undo-buttons .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Cards beside the preview, for picking roads and the selected title */
+/* Above .btn:hover, which would turn it back to a plain button while the pointer is on it. */
+.preview-toolbar .btn.pick-toggle.active {
+  border-color: var(--primary-border);
+  background: linear-gradient(var(--picked-1), var(--picked-2));
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.4);
+  color: #fff;
+  text-shadow: 0 -1px 0 rgb(0 0 0 / 0.35);
+}
+
+.preview-toolbar .pick-toggle {
+  height: 26px;
+  box-shadow: var(--btn-highlight), var(--shadow-float);
+}
+
+.preview-card {
+  position: absolute;
+  top: 46px;
+  right: 10px;
+  width: 300px;
+  max-height: calc(100% - 100px);
+  overflow-y: auto;
+  padding: 8px 10px 10px;
+  border: 1px solid rgb(0 0 0 / 0.22);
+  border-radius: var(--radius);
+  background: var(--panel);
+  background-clip: padding-box;
+  box-shadow: var(--shadow-float);
+  font-size: 12px;
+}
+
+.preview-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.preview-card-header h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.preview-card-header .icon-button:hover {
+  color: var(--text);
+}
+
+.preview-card-text {
+  margin: 0 0 8px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.preview-card-note {
+  margin: 8px 0 0;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.preview-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.preview-card-actions .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.preview-card .check {
+  margin-top: 4px;
+}
+
+.road-routes {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.road-routes-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-weight: bold;
+}
+
+.road-routes ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.road-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.road-route > .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.road-route .input-unit {
+  flex: none;
+  width: 84px;
+}
+
+.road-route-count {
+  flex: none;
+  min-width: 2ch;
+  color: var(--text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.preview-hint {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  max-width: 40%;
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 1px solid rgb(0 0 0 / 0.22);
+  border-radius: var(--radius);
+  background: var(--panel);
+  background-clip: padding-box;
+  box-shadow: var(--shadow-float);
+  color: var(--text-2);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@media (max-width: 800px) {
+  .preview-card {
+    top: auto;
+    left: 10px;
+    bottom: 10px;
+    width: auto;
+    max-height: 45%;
+  }
+
+  /* The card takes the footer's place. */
+  .preview-stage.has-card .preview-footer {
+    display: none;
+  }
+
+  .preview-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 460px) {
+  .topbar .undo-buttons {
+    display: none;
+  }
+}

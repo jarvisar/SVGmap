@@ -105,13 +105,26 @@ function getWorker(): Worker {
 export function renderFraction(progress: RenderProgress | null): number {
   if (!progress) return 0;
   if (progress.stage === 'tiles') return 0.1 + 0.55 * ((progress.done ?? 0) / Math.max(progress.total ?? 1, 1));
-  // Overture's buildings come after the tiles' geometry.
-  if (progress.stage === 'buildings') return 0.75 + 0.14 * Math.min(1, Math.max(0, progress.fraction ?? 0));
+  // Overture's buildings and sidewalks come after the tiles' geometry.
+  if (progress.stage === 'buildings' || progress.stage === 'sidewalks') return 0.75 + 0.14 * Math.min(1, Math.max(0, progress.fraction ?? 0));
   return progress.stage === 'geometry' ? 0.75 : 0.9;
 }
 
+// Picked roads go in the key as a number per list. Written out, tens of
+// thousands of points held up every frame of a map drag. The lists are only
+// ever replaced, never changed in place, so a new list is new picks.
+const listIds = new WeakMap<object, number>();
+let lastListId = 0;
+
+function listId(list: object): number {
+  let id = listIds.get(list);
+  if (id === undefined) listIds.set(list, (id = ++lastListId));
+  return id;
+}
+
 export function settingsKey(settings: RenderSettings, customFont: CustomFont | null): string {
-  return JSON.stringify([settings, customFont ? fontFingerprint(customFont.data) : null]);
+  const picks = { roadRoutes: listId(settings.roadRoutes), hiddenLines: listId(settings.hiddenLines) };
+  return JSON.stringify([{ ...settings, ...picks }, customFont ? fontFingerprint(customFont.data) : null]);
 }
 
 export function requestRender(settings: RenderSettings, customFont: CustomFont | null): void {

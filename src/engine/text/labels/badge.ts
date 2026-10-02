@@ -13,6 +13,7 @@ import {
   artwork,
   bendText,
   circle,
+  fitScale,
   mergeGeometry,
   openRing,
   place,
@@ -66,12 +67,15 @@ export function layoutBadgeLabel(
   map: MapInfo | null,
 ): LabelArtwork {
   const k = s.size / 100;
-  const D = s.badgeDiameter * k;
+  const limit = insetShape(layout.labelAnchor, s.gap);
+  // Too big for the piece: the whole badge shrinks. The line width stays the same.
+  const fit = fitScale(limit, (f) => [s.badgeDiameter * k * f, s.badgeDiameter * k * f]);
+  const D = s.badgeDiameter * k * fit;
   const R = D / 2;
-  const placed = placeBlock(insetShape(layout.labelAnchor, s.gap), s.position, D, D);
+  const placed = fit > 0 ? placeBlock(limit, layout.labelAnchor, s, D, D) : null;
   if (!placed) throw new LabelError('The badge does not fit inside the border. Make it smaller.');
-  const cx = placed[0] + R;
-  const cy = placed[1] + R;
+  const cx = placed.at[0] + R;
+  const cy = placed.at[1] + R;
 
   // Outer line, second line, then the text band down to the inner line.
   const r2 = R * 0.93;
@@ -117,7 +121,7 @@ export function layoutBadgeLabel(
     }
   }
   return artwork({
-    knockout: [placed[0], placed[1], D, D],
+    knockout: [placed.at[0], placed.at[1], D, D],
     clear: showMap ? [circle(cx, cy, R), circle(cx, cy, r3, true)] : [circle(cx, cy, R)],
     text: lettering,
     solid,
@@ -125,5 +129,7 @@ export function layoutBadgeLabel(
     frame,
     frameWidth: width,
     frameLabel: 'Badge',
+    offset: placed.offset,
+    scale: fit,
   });
 }

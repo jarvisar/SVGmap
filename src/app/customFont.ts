@@ -1,5 +1,6 @@
 // Kept in IndexedDB so a loaded font survives a reload.
 import type { CustomFont } from '../engine/text/loadFont.ts';
+import { textGeometry } from '../engine/text/outline.ts';
 
 const DB_NAME = 'svgmap';
 const STORE = 'files';
@@ -59,7 +60,8 @@ export async function checkFont(data: ArrayBuffer): Promise<string | null> {
   if (signature === 'wOF2') return "WOFF2 fonts can't be read. Use a TTF, OTF or WOFF file.";
   try {
     const { parseOutlineFont } = await import('../engine/text/loadFont.ts');
-    parseOutlineFont(data);
+    // Laid out too, since some fonts parse and then throw on the first title.
+    textGeometry(parseOutlineFont(data), 'Map 123');
     return null;
   } catch {
     return "This file couldn't be read as a font.";

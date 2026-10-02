@@ -6,8 +6,9 @@ import { metresPerPixel, zoomForMetres } from '../../engine/geo/mercator.ts';
 import type { AreaSpec } from '../../engine/geo/transform.ts';
 import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
 import { bandPathD, shapePathD } from '../../engine/layout/shapes.ts';
-import type { LabelArtwork } from '../../engine/text/label.ts';
+import type { LabelArtwork, LabelSettings } from '../../engine/text/label.ts';
 import { LockIcon } from '../components/controls.tsx';
+import { type HandleSpot, type TitleDrag, type TitleGrip, canDrag, dragTitle, droppedLabel, handleAt, resizeCursor, spacedHandles, titleAt, titleHandles } from '../labelDrag.ts';
 import { routesGeoJson } from '../routes.ts';
 import { scaleOf, useApp } from '../store.ts';
 import { BREAK_MASK, BorderBreakMask, TitleOverlay } from './TitleOverlay.tsx';
@@ -21,6 +22,16 @@ setWorkerUrl(maplibreWorker);
 const COARSE = matchMedia('(pointer: coarse)').matches;
 const HINT = COARSE ? 'Drag to move, pinch to zoom, twist to rotate' : 'Drag to move, scroll to zoom, right-drag to rotate';
 const LOCKED_HINT = COARSE ? 'Drag to move, twist to rotate' : 'Drag to move, right-drag to rotate';
+
+// Title handles in screen pixels: their size, how far apart they're kept, and
+// how far from one a press still takes it. Fingers get further.
+const HANDLE_SIZE = 9;
+const HANDLE_GAP = 18;
+const HANDLE_REACH = COARSE ? 16 : 9;
+// How far a press on the title moves before it drags it.
+const DRAG_START_PX = 4;
+
+type Point = [number, number];
 
 const MIN_ZOOM = 0;
 const MAX_ZOOM = 24;
@@ -75,6 +86,7 @@ const sameArea = (a: AreaSpec | null, b: AreaSpec) =>
   Math.abs(a.widthM / b.widthM - 1) < 1e-6;
 
 export function MapView() {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibre | null>(null);
   const frameRef = useRef<Frame | null>(null);
@@ -116,7 +128,154 @@ export function MapView() {
     () => (needsMap && metresPerMm > 0 ? { metresPerMm, bearing: area.bearing } : null),
     [needsMap, metresPerMm, area.bearing],
   );
-  const { artwork, error: labelError } = useLabelArtwork(layout, label, customFontId, mapInfo);
+  // The title while it's dragged on the map. It's only stored when let go.
+  // Pressing it selects it, which shows its handles.
+  const [dragged, setDragged] = useState<LabelSettings | null>(null);
+  const [titleSelected, setTitleSelected] = useState(false);
+  const [titleHover, setTitleHover] = useState(false);
+  const shownLabel = dragged ?? label;
+  const { artwork, error: labelError, layoutWith } = useLabelArtwork(true, layout, shownLabel, customFontId, mapInfo);
+  // Handles only on a title big enough on screen to grab them apart from it.
+  const handles = useMemo(() => {
+    if (!titleSelected || !artwork || !layout || !frame) return [];
+    if (Math.max(artwork.knockout[2], artwork.knockout[3]) * frame.scale < 24) return [];
+    return spacedHandles(titleHandles(layout, shownLabel, artwork), (x, y) => [x * frame.scale, y * frame.scale], HANDLE_GAP);
+  }, [titleSelected, artwork, layout, frame, shownLabel]);
+  const latest = useRef({ layout, label, artwork, layoutWith, frame, handles });
+  latest.current = { layout, label, artwork, layoutWith, frame, handles };
+  useEffect(() => {
+    if (!artwork) setTitleSelected(false);
+  }, [artwork]);
+
+  // Dragging the title, or one of its handles. MapLibre listens for mouse and
+  // touch events on its canvas, so a press on the title stops those here,
+  // before they reach it, and the map doesn't pan under the title.
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    let grab: { pointerId: number; start: Point; screen: Point; moved: boolean; drag: TitleDrag; to: LabelSettings | null } | null = null;
+    const onCanvas = (e: Event) => {
+      const map = mapRef.current;
+      return Boolean(map && e.target instanceof Node && map.getCanvasContainer().contains(e.target));
+    };
+    const toPiece = (e: { clientX: number; clientY: number }): Point | null => {
+      const f = latest.current.frame;
+      if (!f) return null;
+      const r = wrap.getBoundingClientRect();
+      return [(e.clientX - r.left - f.ox) / f.scale, (e.clientY - r.top - f.oy) / f.scale];
+    };
+    const gripAt = (e: { clientX: number; clientY: number }): TitleGrip | null => {
+      const { artwork: shown, label: stored, handles: spots, frame: f } = latest.current;
+      const p = toPiece(e);
+      if (!p || !shown || !f) return null;
+      return handleAt(spots, p[0], p[1], HANDLE_REACH / f.scale) ?? (titleAt(stored, shown, p[0], p[1]) ? 'move' : null);
+    };
+    const setCursor = (cursor: string) => {
+      const container = mapRef.current?.getCanvasContainer();
+      if (container) container.style.cursor = cursor;
+    };
+    const finish = (keep: boolean) => {
+      const g = grab;
+      grab = null;
+      const relayout = latest.current.layoutWith;
+      const placed = keep && g?.to && relayout ? relayout(g.to) : null;
+      if (g?.to && placed) useApp.getState().setLabel(droppedLabel(g.to, placed));
+      setDragged(null);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (grab) {
+        // A second finger puts the title back and pinches the map instead.
+        // MapLibre finds both fingers on this one's touchstart.
+        finish(false);
+        setCursor('');
+        return;
+      }
+      if (!onCanvas(e) || e.button !== 0) return;
+      const grip = gripAt(e);
+      const { artwork: shown, label: stored } = latest.current;
+      const start = toPiece(e);
+      if (!grip || !shown || !start) {
+        setTitleSelected(false);
+        return;
+      }
+      e.stopPropagation();
+      // Also keeps the browser from sending MapLibre the mouse events.
+      e.preventDefault();
+      try {
+        wrap.setPointerCapture(e.pointerId);
+      } catch {
+        // Best effort. The drag still works while the pointer stays over the map.
+      }
+      grab = { pointerId: e.pointerId, start, screen: [e.clientX, e.clientY], moved: false, drag: { grip, label: stored, artwork: shown }, to: null };
+      setTitleSelected(true);
+      setCursor(grip === 'move' ? 'move' : (cursorOf(grip) ?? 'move'));
+    };
+    const cursorOf = (grip: TitleGrip) => {
+      const spot = latest.current.handles.find((h) => h.id === grip);
+      return spot ? resizeCursor(spot.dx, spot.dy) : null;
+    };
+    const onMove = (e: PointerEvent) => {
+      if (grab && e.pointerId === grab.pointerId) {
+        e.stopPropagation();
+        // A click that wobbles a pixel or two only selects it.
+        if (!grab.moved && Math.hypot(e.clientX - grab.screen[0], e.clientY - grab.screen[1]) < DRAG_START_PX) return;
+        grab.moved = true;
+        const { layout: at, layoutWith: relayout } = latest.current;
+        const p = toPiece(e);
+        if (!at || !relayout || !p) return;
+        grab.to = dragTitle(at, grab.drag, p[0] - grab.start[0], p[1] - grab.start[1], relayout);
+        setDragged(grab.to);
+        return;
+      }
+      if (grab || e.buttons || !onCanvas(e)) return;
+      const grip = gripAt(e);
+      setTitleHover(grip !== null);
+      setCursor(grip ? (cursorOf(grip) ?? 'move') : '');
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!grab || e.pointerId !== grab.pointerId) return;
+      e.stopPropagation();
+      finish(e.type === 'pointerup');
+      setCursor('');
+    };
+    // What MapLibre itself listens to, kept from it while the title is held.
+    const swallow = (e: Event) => {
+      if (grab) e.stopPropagation();
+    };
+    const onDoubleClick = (e: MouseEvent) => {
+      // Not a zoom on the title.
+      if (onCanvas(e) && gripAt(e)) e.stopPropagation();
+    };
+    const onLeave = () => {
+      if (grab) return;
+      setTitleHover(false);
+      setCursor('');
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (grab) finish(false);
+      else setTitleSelected(false);
+    };
+    const swallowed = ['mousedown', 'mousemove', 'mouseup', 'touchstart', 'touchmove', 'touchend', 'touchcancel'] as const;
+    wrap.addEventListener('pointerdown', onDown, true);
+    wrap.addEventListener('pointermove', onMove, true);
+    wrap.addEventListener('pointerup', onUp, true);
+    wrap.addEventListener('pointercancel', onUp, true);
+    wrap.addEventListener('dblclick', onDoubleClick, true);
+    wrap.addEventListener('pointerleave', onLeave);
+    for (const type of swallowed) wrap.addEventListener(type, swallow, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      wrap.removeEventListener('pointerdown', onDown, true);
+      wrap.removeEventListener('pointermove', onMove, true);
+      wrap.removeEventListener('pointerup', onUp, true);
+      wrap.removeEventListener('pointercancel', onUp, true);
+      wrap.removeEventListener('dblclick', onDoubleClick, true);
+      wrap.removeEventListener('pointerleave', onLeave);
+      for (const type of swallowed) wrap.removeEventListener(type, swallow, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -247,10 +406,25 @@ export function MapView() {
     fromMap.current = area;
   }, [frame, area, scaleLocked]);
 
+  const hint = titleSelected
+    ? `Drag the title or its handles. ${COARSE ? 'Tap' : 'Click'} the map to let go.`
+    : scaleLocked
+      ? LOCKED_HINT
+      : HINT;
   return (
-    <div className="map-wrap">
+    <div className="map-wrap" ref={wrapRef}>
       <div ref={containerRef} className="map" />
-      {layout && frame ? <Overlay layout={layout} frame={frame} width={size.w} height={size.h} artwork={artwork} /> : null}
+      {layout && frame ? (
+        <Overlay
+          layout={layout}
+          frame={frame}
+          width={size.w}
+          height={size.h}
+          artwork={artwork}
+          outline={artwork && (titleSelected || titleHover) && canDrag(shownLabel.style) ? (titleSelected ? 'selected' : 'hover') : null}
+          handles={handles}
+        />
+      ) : null}
       <div className="map-footer">
         <button
           type="button"
@@ -263,15 +437,24 @@ export function MapView() {
           1:{scale.toLocaleString()}
           {scaleLocked && nudged ? <span className="map-scale-note">Scale is locked. Click to unlock</span> : null}
         </button>
-        <div className="map-hint">{scaleLocked ? LOCKED_HINT : HINT}</div>
+        <div className="map-hint">{hint}</div>
       </div>
       {labelError ? <div className="map-notice notice">{labelError}</div> : null}
     </div>
   );
 }
 
-function Overlay(props: { layout: Layout; frame: Frame; width: number; height: number; artwork: LabelArtwork | null }) {
-  const { layout, frame, width, height, artwork } = props;
+function Overlay(props: {
+  layout: Layout;
+  frame: Frame;
+  width: number;
+  height: number;
+  artwork: LabelArtwork | null;
+  outline: 'hover' | 'selected' | null;
+  handles: HandleSpot[];
+}) {
+  const { layout, frame, width, height, artwork, outline, handles } = props;
+  const handle = HANDLE_SIZE / frame.scale;
   const s = frame.scale;
   const outside = `M${-frame.ox / s},${-frame.oy / s}h${width / s}v${height / s}h${-width / s}Z`;
   const broken = artwork?.borderBreaks.length ? `url(#${BREAK_MASK})` : undefined;
@@ -291,6 +474,18 @@ function Overlay(props: { layout: Layout; frame: Frame; width: number; height: n
         </g>
         <path d={shapePathD(layout.canvas)} fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         {artwork ? <TitleOverlay artwork={artwork} windowD={shapePathD(layout.window)} /> : null}
+        {artwork && outline ? (
+          <rect
+            className={outline === 'selected' ? 'title-frame' : 'title-grab'}
+            x={artwork.knockout[0]}
+            y={artwork.knockout[1]}
+            width={artwork.knockout[2]}
+            height={artwork.knockout[3]}
+          />
+        ) : null}
+        {handles.map((spot) => (
+          <rect key={spot.id} className="title-handle" x={spot.x - handle / 2} y={spot.y - handle / 2} width={handle} height={handle} />
+        ))}
       </g>
     </svg>
   );

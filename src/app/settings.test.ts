@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { defaultRenderSettings } from '../engine/defaults.ts';
+import type { LonLatLine, RoadRoute } from '../engine/routes/picks.ts';
 import { encodePolyline } from '../engine/routes/polyline.ts';
 import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute } from '../engine/routes/route.ts';
 import type { RouteData } from '../engine/settings.ts';
 import { decodeSettings, encodeSettings } from './share.ts';
-import { defaultSettings, mergeSettings, toRenderSettings } from './settings.ts';
+import { defaultSettings, mergeSettings, packPicks, toRenderSettings, unpackPicks } from './settings.ts';
 import { useApp } from './store.ts';
 
 const ROUTE: RouteData = {
@@ -180,5 +181,54 @@ describe('share links', () => {
 
   it('ignore text that is not a share link', () => {
     expect(decodeSettings('not base64 json')).toBeNull();
+  });
+});
+
+describe('picked roads', () => {
+  const roadRoutes: RoadRoute[] = [{ id: 'r', name: 'Home', color: '#E4002B', width: 0.6, lines: [[[-87.62, 41.88], [-87.611234, 41.891234]]] }];
+  const hiddenLines: LonLatLine[] = [[[-87.6, 41.9], [-87.59, 41.91], [-87.58, 41.905]]];
+
+  it('come back from saved settings and go to the render', () => {
+    const merged = mergeSettings(defaultSettings(), JSON.parse(JSON.stringify({ roadRoutes, hiddenLines })));
+    expect(merged.roadRoutes).toEqual(roadRoutes);
+    expect(merged.hiddenLines).toEqual(hiddenLines);
+    expect(toRenderSettings(merged).roadRoutes).toEqual(roadRoutes);
+    expect(toRenderSettings(merged).hiddenLines).toEqual(hiddenLines);
+  });
+
+  it('drop anything that is not a pick', () => {
+    const merged = mergeSettings(defaultSettings(), { roadRoutes: [{ id: 'x', color: 'red', lines: [] }, 'route'], hiddenLines: 'roads' });
+    expect(merged.roadRoutes).toEqual([]);
+    expect(merged.hiddenLines).toEqual([]);
+    // Settings from before picking roads have none.
+    expect(mergeSettings(defaultSettings(), { label: { text: 'ROME' } }).roadRoutes).toEqual([]);
+  });
+
+  it('go in share links as polylines and come back the same', () => {
+    const settings = { ...defaultSettings(), roadRoutes, hiddenLines };
+    const encoded = encodeSettings(settings);
+    const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))));
+    expect(typeof json.hiddenLines[0]).toBe('string');
+    expect(typeof json.roadRoutes[0].lines[0]).toBe('string');
+    expect(decodeSettings(encoded)).toEqual(settings);
+    // None picked, nothing in the link.
+    expect(encodeSettings(defaultSettings())).toBe(encodeSettings({ ...defaultSettings(), roadRoutes: [], hiddenLines: [] }));
+  });
+
+  it('are saved as polylines and read back the same', () => {
+    const settings = { ...defaultSettings(), roadRoutes, hiddenLines };
+    const saved = JSON.parse(JSON.stringify(packPicks(settings)));
+    expect(typeof saved.hiddenLines[0]).toBe('string');
+    expect(mergeSettings(defaultSettings(), unpackPicks(saved))).toEqual(settings);
+    // Saved on every change, so only worked out again when the picks change.
+    expect(packPicks(settings).hiddenLines).toBe(packPicks({ ...settings }).hiddenLines);
+  });
+
+  it('are kept by Reset settings', () => {
+    useApp.getState().set({ roadRoutes, hiddenLines });
+    useApp.getState().reset();
+    expect(useApp.getState().roadRoutes).toEqual(roadRoutes);
+    expect(useApp.getState().hiddenLines).toEqual(hiddenLines);
+    useApp.getState().set({ roadRoutes: [], hiddenLines: [] });
   });
 });

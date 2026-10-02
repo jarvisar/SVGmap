@@ -1,5 +1,6 @@
 // A render's output. The SVG writer and the preview both draw from this.
 import type { CleanupStats } from './lines/cleanup.ts';
+import type { LonLatLine, PickLines } from './routes/picks.ts';
 import type { ElementId, OutputMode } from './settings.ts';
 
 export interface OutputPath {
@@ -37,7 +38,9 @@ export interface RenderStats {
   bytes: number;
   // Buildings added from Overture. Only there when that's turned on and was read.
   overtureBuildings?: number;
-  // The Overture download failed. Generate renders again, which retries it.
+  // Metres of path left out as sidewalks and crossings. Only there when that's turned on and was read.
+  sidewalksLeftOutM?: number;
+  // An Overture download failed. Generate renders again, which retries it.
   overtureFailed?: boolean;
   cleanup: CleanupStats | null;
   // Share of the road linework kept after cleanup, 0 to 1.
@@ -70,4 +73,8 @@ export interface RenderResult {
   stats: RenderStats;
   warnings: string[];
   meta: RenderMeta;
+  /** Road lines the preview can pick. */
+  pick?: PickLines;
+  /** Picked roads (in a road route or left out) that nothing on this map matched. */
+  missingPicks?: LonLatLine[];
 }

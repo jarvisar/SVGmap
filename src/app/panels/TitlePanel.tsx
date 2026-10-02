@@ -2,9 +2,10 @@ import { useRef, useState } from 'react';
 import { type LabelPreset, applyLabelPreset, formatCoordinates } from '../../engine/presets.ts';
 import type { FillMode } from '../../engine/settings.ts';
 import { CUSTOM_FONT_ID, FONTS, fontInfo } from '../../engine/text/fonts.ts';
-import type { LabelPosition, LabelSettings, LabelStyle } from '../../engine/text/label.ts';
+import { type LabelPosition, type LabelSettings, type LabelStyle, SUBTITLED } from '../../engine/text/label.ts';
 import { Check, Disclosure, Field, NumberField, Section, Segmented, SelectField, Slider, TextField } from '../components/controls.tsx';
 import { checkFont, storeFont } from '../customFont.ts';
+import { AUTOFIT_HELP, RESET_OFFSET, boxResized, labelMoved } from '../labelDrag.ts';
 import { useApp } from '../store.ts';
 import { PresetPicker, STYLE_NAMES, StylePicker } from './TitleLooks.tsx';
 
@@ -25,8 +26,6 @@ const LETTERING: Record<FillMode, string> = {
   'hatch-outline': 'Hatched with outline',
 };
 
-// Styles that draw the subtitle.
-const SUBTITLED: LabelStyle[] = ['band', 'badge', 'inset', 'legend'];
 // Styles placed in a corner.
 const CORNERED: LabelStyle[] = ['box', 'ribbon', 'badge', 'legend'];
 
@@ -121,7 +120,13 @@ export function TitlePanel() {
           ) : null}
 
           {CORNERED.includes(kind) ? (
-            <SelectField<LabelPosition> label="Position" value={label.position} options={POSITIONS} onChange={(position) => set({ position })} />
+            <SelectField<LabelPosition>
+              label="Position"
+              value={label.position}
+              options={POSITIONS}
+              onChange={(position) => set({ position, offsetX: 0, offsetY: 0 })}
+              hint="Where it starts. You can also click the title on the map or in the preview to drag it somewhere else or resize it."
+            />
           ) : null}
           {kind === 'band' || kind === 'inset' ? (
             <Field label="Position" hint={kind === 'inset' ? 'The subtitle goes in the border on the other side.' : undefined}>
@@ -132,9 +137,23 @@ export function TitlePanel() {
                   { value: 'top', label: 'Top' },
                   { value: 'bottom', label: 'Bottom' },
                 ]}
-                onChange={(bandPosition) => set({ bandPosition })}
+                onChange={(bandPosition) => set({ bandPosition, bandOffsetX: 0, bandOffsetY: 0 })}
               />
             </Field>
+          ) : null}
+          {labelMoved(label) || boxResized(label) ? (
+            <div className="button-row">
+              {labelMoved(label) ? (
+                <button type="button" className="btn btn-small" onClick={() => set(RESET_OFFSET)}>
+                  Reset the position
+                </button>
+              ) : null}
+              {boxResized(label) ? (
+                <button type="button" className="btn btn-small" onClick={() => set({ boxWidth: 0, boxHeight: 0 })}>
+                  Fit the box to the text
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {kind === 'letters' ? (
             <>
@@ -177,6 +196,7 @@ export function TitlePanel() {
             }}
           />
           <Slider label="Size" value={label.size} min={40} max={250} step={5} unit="%" onChange={(size) => set({ size })} />
+          {AUTOFIT_HELP[kind] ? <Check label="Autofit text" title={AUTOFIT_HELP[kind]} checked={label.autofit} onChange={(autofit) => set({ autofit })} /> : null}
           <Slider label="Letter spacing" value={label.titleSpacing} min={80} max={200} step={5} scale={100} unit="%" onChange={(titleSpacing) => set({ titleSpacing })} />
           {mapInLetters ? null : (
             <SelectField<FillMode>
@@ -219,7 +239,7 @@ export function TitlePanel() {
                     { value: 'center', label: 'Centre' },
                     { value: 'right', label: 'Right' },
                   ]}
-                  onChange={(bandAlign) => set({ bandAlign })}
+                  onChange={(bandAlign) => set({ bandAlign, bandOffsetX: 0 })}
                 />
               </Field>
               <Check label="Divider line" checked={label.divider} onChange={(divider) => set({ divider })} />

@@ -1,7 +1,8 @@
 // Pieces shared by the title styles.
 import type { Path, Point } from '../../lines/geometry.ts';
-import { type Shape, shapeCentre, shapeContains } from '../../layout/shapes.ts';
+import { type Shape, shapeCentre } from '../../layout/shapes.ts';
 import { type TextGeometry, geometryBounds } from '../outline.ts';
+import { boxCentres, nearestIn, regionSlice } from '../place.ts';
 
 export class LabelError extends Error {}
 
@@ -35,6 +36,12 @@ export interface LabelArtwork {
   frameLabel: string;
   // The border lines are left out inside these convex shapes.
   borderBreaks: Path[];
+  // The offset it ended up at once kept inside the border. A drag stores
+  // this, so what's saved is what's drawn.
+  offset: [number, number];
+  // How far it was scaled from its set size to fit: the whole title when it
+  // was too big for the piece, the text in a band. 1 when it fit as set.
+  scale: number;
 }
 
 export const NO_TEXT: TextGeometry = { rings: [], strokes: [] };
@@ -52,6 +59,8 @@ export function artwork(parts: Partial<LabelArtwork> & Pick<LabelArtwork, 'knock
     frameWidth: 0.25,
     frameLabel: 'Title lines',
     borderBreaks: [],
+    offset: [0, 0],
+    scale: 1,
     ...parts,
   };
 }
@@ -170,25 +179,6 @@ export function rotate(p: Point, centre: Point, degrees: number): Point {
   return [centre[0] + dx * Math.cos(a) - dy * Math.sin(a), centre[1] + dx * Math.sin(a) + dy * Math.cos(a)];
 }
 
-// For round and rounded pieces, where a corner position can stick out.
-export function nudgeInside(limit: Shape, x: number, y: number, w: number, h: number): [number, number] | null {
-  if (limit.kind === 'rect') return [x, y];
-  const [cx, cy] = shapeCentre(limit);
-  for (let i = 0; i <= 400; i++) {
-    const t = i / 400;
-    const nx = x + (cx - (x + w / 2)) * t;
-    const ny = y + (cy - (y + h / 2)) * t;
-    const corners: Point[] = [
-      [nx, ny],
-      [nx + w, ny],
-      [nx, ny + h],
-      [nx + w, ny + h],
-    ];
-    if (corners.every((c) => shapeContains(limit, c))) return [nx, ny];
-  }
-  return null;
-}
-
 // Round and hexagonal pieces get narrower towards the edge.
 export function availableWidthAt(shape: Shape, y0: number, y1: number): [number, number] {
   if (shape.kind !== 'circle' && shape.kind !== 'hexagon') return [shape.x, shape.x + shape.w];
@@ -202,17 +192,28 @@ export function availableWidthAt(shape: Shape, y0: number, y1: number): [number,
 
 export type CornerPosition = 'lower_right' | 'lower_left' | 'upper_right' | 'upper_left' | 'lower_center' | 'upper_center' | 'center';
 
-// Top left corner of a w x h block at a position inside limit, or null when
-// it doesn't fit.
-export function placeBlock(limit: Shape, position: CornerPosition, w: number, h: number): [number, number] | null {
-  if (w > limit.w || h > limit.h) return null;
-  const left = limit.x;
-  const top = limit.y;
-  const right = limit.x + limit.w - w;
-  const bottom = limit.y + limit.h - h;
-  const centreX = limit.x + (limit.w - w) / 2;
-  const centreY = limit.y + (limit.h - h) / 2;
-  const positions: Record<CornerPosition, [number, number]> = {
+// Where a title in a corner is, and how far it was dragged from there as a
+// share of the space inside the border. 0, 0 leaves it where the position
+// puts it.
+export interface Placement {
+  position: CornerPosition;
+  offsetX: number;
+  offsetY: number;
+}
+
+// Top left corner of a w x h block inside limit, and the offset it ended up
+// at, or null when it doesn't fit anywhere. anchor is what the offset is a
+// share of.
+export function placeBlock(limit: Shape, anchor: Shape, s: Placement, w: number, h: number): { at: [number, number]; offset: [number, number] } | null {
+  const centres = boxCentres(limit, w, h);
+  if (centres.length === 0) return null;
+  const left = limit.x + w / 2;
+  const top = limit.y + h / 2;
+  const right = limit.x + limit.w - w / 2;
+  const bottom = limit.y + limit.h - h / 2;
+  const centreX = limit.x + limit.w / 2;
+  const centreY = limit.y + limit.h / 2;
+  const positions: Record<CornerPosition, Point> = {
     lower_right: [right, bottom],
     lower_left: [left, bottom],
     upper_right: [right, top],
@@ -221,19 +222,47 @@ export function placeBlock(limit: Shape, position: CornerPosition, w: number, h:
     upper_center: [centreX, top],
     center: [centreX, centreY],
   };
-  const start = positions[position] ?? positions.lower_right;
-  return nudgeInside(limit, start[0], start[1], w, h);
+  // A corner of the bounding box is off a round or hexagonal piece, so the
+  // block goes to the nearest spot that fits. Walking it towards the centre,
+  // as before, left boxes floating mid-map.
+  const start = positions[s.position] ?? positions.lower_right;
+  let base: Point;
+  if (limit.kind === 'circle') {
+    // No flat edge to sit on, so the block's corner lands on the rim about 45
+    // degrees round. Kept flush to the top or bottom, the corner boxes all but
+    // met in the middle.
+    base = nearestIn(centres, start)!;
+  } else {
+    // Flush along its long side if it fits there anywhere, so a block sits on
+    // a hexagon's flat bottom and slides out of a rounded corner. Otherwise
+    // the nearest spot, counted in block widths and heights so it stays near
+    // that edge.
+    const axis = w >= h ? 1 : 0;
+    const along = regionSlice(centres, axis, start[axis]);
+    if (along) {
+      const other = Math.min(Math.max(start[1 - axis], along[0]), along[1]);
+      base = axis === 1 ? [other, start[1]] : [start[0], other];
+    } else {
+      base = nearestIn(centres, start, 1 / w, 1 / h)!;
+    }
+  }
+  const moved = s.offsetX !== 0 || s.offsetY !== 0;
+  const [cx, cy] = moved ? nearestIn(centres, [base[0] + s.offsetX * anchor.w, base[1] + s.offsetY * anchor.h])! : base;
+  return {
+    at: [cx - w / 2, cy - h / 2],
+    offset: moved ? [(cx - base[0]) / anchor.w, (cy - base[1]) / anchor.h] : [0, 0],
+  };
 }
 
-// The biggest scale up to 1 that placeBlock can fit, so long text shrinks
-// instead of failing. size gives the block's width and height at a scale.
-// 0 when nothing fits.
-export function fitScale(limit: Shape, position: CornerPosition, size: (scale: number) => [number, number]): number {
-  const fits = (scale: number) => placeBlock(limit, position, ...size(scale)) !== null;
+// The biggest scale up to 1 a block fits inside limit at, so a title too big
+// for the piece shrinks instead of failing. size gives the block's width and
+// height at a scale. 0 when nothing fits.
+export function fitScale(limit: Shape, size: (scale: number) => [number, number]): number {
+  const fits = (scale: number) => boxCentres(limit, ...size(scale)).length > 0;
   if (fits(1)) return 1;
   let lo = 0;
   let hi = 1;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 30; i++) {
     const mid = (lo + hi) / 2;
     if (fits(mid)) lo = mid;
     else hi = mid;

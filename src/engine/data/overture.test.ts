@@ -382,7 +382,9 @@ describe('fetchOverture (offline)', () => {
     const data = await fetchOverture({ bounds: AREA, onProgress: (p) => progress.push(p) });
 
     expect(data.release).toBe('test');
-    expect(Object.keys(data.features)).toEqual(['building']);
+    // Buildings unless other types are asked for.
+    expect(Object.keys(data.features)).toEqual(['building', 'segment']);
+    expect(data.features.segment).toEqual([]);
     const buildings = data.features.building;
     // Each id once, the first copy winning.
     expect(buildings.map((f) => f.id)).toEqual(['inside', 'straddle', 'tower', 'dup', 'multi', 'second']);
