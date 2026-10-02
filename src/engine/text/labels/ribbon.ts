@@ -6,7 +6,7 @@ import { insetShape } from '../../layout/shapes.ts';
 import type { Layout } from '../../layout/layout.ts';
 import type { TextGeometry } from '../outline.ts';
 import type { LabelSettings } from '../label.ts';
-import { type LabelArtwork, LabelError, artwork, boundsOf, moved, openRing, placeBlock, rect, sized, subdivide, warpText } from './common.ts';
+import { type LabelArtwork, LabelError, artwork, boundsOf, fitScale, moved, openRing, place, placeBlock, rect, sized, subdivide, warpText } from './common.ts';
 
 export function layoutRibbonLabel(layout: Layout, s: LabelSettings, title: TextGeometry): LabelArtwork {
   const k = s.size / 100;
@@ -66,15 +66,17 @@ export function layoutRibbonLabel(layout: Layout, s: LabelSettings, title: TextG
 
   const all = [frontRing, ...bodyRings, ...foldRings];
   const [bx, by, bw, bh] = boundsOf(all);
-  const placed = placeBlock(insetShape(layout.labelAnchor, s.gap), s.position, bw, bh);
+  const limit = insetShape(layout.labelAnchor, s.gap);
+  // Long text shrinks the whole ribbon. The line width stays the same.
+  const fit = fitScale(limit, s.position, (f) => [bw * f, bh * f]);
+  const placed = fit > 0 ? placeBlock(limit, s.position, bw * fit, bh * fit) : null;
   if (!placed) throw new LabelError('The ribbon does not fit inside the border. Make it smaller or shorten the text.');
-  const dx = placed[0] - bx;
-  const dy = placed[1] - by;
-  const shift = (p: Path): Path => p.map(([x, y]) => [x + dx, y + dy]);
+  const at = ([x, y]: Point): Point => [placed[0] + (x - bx) * fit, placed[1] + (y - by) * fit];
+  const shift = (p: Path): Path => p.map(at);
   return artwork({
-    knockout: [placed[0], placed[1], bw, bh],
+    knockout: [placed[0], placed[1], bw * fit, bh * fit],
     clear: all.map(shift),
-    text: moved(letters, dx, dy),
+    text: place(letters, at),
     solid: (s.solid ? [frontRing, ...bodyRings] : foldRings).map(shift),
     reversed: s.solid,
     frame: frameLines.map(shift),

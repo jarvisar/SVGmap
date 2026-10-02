@@ -10,7 +10,7 @@ import { layoutInsetLabel } from './labels/inset.ts';
 import { layoutLegendLabel } from './labels/legend.ts';
 import { layoutLettersLabel } from './labels/letters.ts';
 import { layoutRibbonLabel } from './labels/ribbon.ts';
-import { type LoadedFont, textGeometry } from './outline.ts';
+import { type LoadedFont, geometryBounds, textGeometry } from './outline.ts';
 
 export { LabelError, layoutBandLabel, layoutBoxLabel };
 export type { LabelArtwork, MapInfo };
@@ -161,7 +161,10 @@ export function buildLabel(
   const small = subtitle ?? title;
   try {
     const main = textGeometry(title, s.text.trim(), titleSpacing * s.titleSpacing);
-    const sub = s.subtitle.trim() ? textGeometry(small, s.subtitle.trim(), subtitleSpacing * s.subtitleSpacing) : null;
+    const typed = s.subtitle.trim() ? textGeometry(small, s.subtitle.trim(), subtitleSpacing * s.subtitleSpacing) : null;
+    // Left out when there's nothing to size, like a single-line font's flat
+    // hyphen or a zero-width space, which trim() keeps.
+    const sub = typed && geometryBounds(typed) ? typed : null;
     switch (style) {
       case 'band':
         return { artwork: layoutBandLabel(layout, s, main, sub), error: null };

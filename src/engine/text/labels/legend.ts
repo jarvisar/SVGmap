@@ -6,7 +6,22 @@ import { insetShape } from '../../layout/shapes.ts';
 import type { Layout } from '../../layout/layout.ts';
 import { type TextGeometry, geometryBounds } from '../outline.ts';
 import type { LabelSettings } from '../label.ts';
-import { type LabelArtwork, LabelError, type MapInfo, NO_TEXT, artwork, mergeGeometry, moved, openRing, place, placeBlock, rect, rotate, sized } from './common.ts';
+import {
+  type LabelArtwork,
+  LabelError,
+  type MapInfo,
+  NO_TEXT,
+  artwork,
+  fitScale,
+  mergeGeometry,
+  moved,
+  openRing,
+  place,
+  placeBlock,
+  rect,
+  rotate,
+  sized,
+} from './common.ts';
 
 const FOOT = 0.3048;
 const MILE = 1609.344;
@@ -45,31 +60,41 @@ export function layoutLegendLabel(
   map: MapInfo | null,
 ): LabelArtwork {
   const k = s.size / 100;
-  const T = s.textHeight * k * 0.72;
-  const S = T * 0.36;
-  const L = T * 0.3;
-  const padX = s.paddingX * k * 1.3;
-  const padY = s.paddingY * k * 1.3;
   const border = s.boxBorder ? s.borderWidth * k : 0;
   const lineWidth = s.borderWidth * k;
-
-  const titleRow = sized(title, T);
-  const subRow = subtitle ? sized(subtitle, S) : null;
   const showScale = s.legendScale;
   const showNorth = s.legendNorth;
   const hasKey = showScale || showNorth;
-  const barH = T * 0.26;
-  const rowH = L * 1.5 + barH;
-  const arrowSlot = rowH * 1.15;
-  const arrowSpace = showNorth ? arrowSlot + T * 0.6 : 0;
-  const contentW = Math.max(titleRow.w, subRow?.w ?? 0, hasKey ? (showScale ? T * 7 : 0) + arrowSpace : 0);
-  const gapSub = T * 0.32;
-  const gapRule = T * 0.5;
-  const contentH = T + (subRow ? gapSub + S : 0) + (hasKey ? 2 * gapRule + rowH : 0);
-  const boxW = contentW + 2 * (padX + border);
-  const boxH = contentH + 2 * (padY + border);
 
-  const placed = placeBlock(insetShape(layout.labelAnchor, s.gap), s.position, boxW, boxH);
+  // Everything but the lines scales with fit, so a long title shrinks the
+  // whole legend. The scale bar is worked out after, at the final size.
+  const measure = (fit: number) => {
+    const T = s.textHeight * k * fit * 0.72;
+    const S = T * 0.36;
+    const L = T * 0.3;
+    const padX = s.paddingX * k * fit * 1.3;
+    const padY = s.paddingY * k * fit * 1.3;
+    const titleRow = sized(title, T);
+    const subRow = subtitle ? sized(subtitle, S) : null;
+    const barH = T * 0.26;
+    const rowH = L * 1.5 + barH;
+    const arrowSlot = rowH * 1.15;
+    const arrowSpace = showNorth ? arrowSlot + T * 0.6 : 0;
+    const contentW = Math.max(titleRow.w, subRow?.w ?? 0, hasKey ? (showScale ? T * 7 : 0) + arrowSpace : 0);
+    const gapSub = T * 0.32;
+    const gapRule = T * 0.5;
+    const contentH = T + (subRow ? gapSub + S : 0) + (hasKey ? 2 * gapRule + rowH : 0);
+    const boxW = contentW + 2 * (padX + border);
+    const boxH = contentH + 2 * (padY + border);
+    return { T, S, L, padX, padY, titleRow, subRow, barH, rowH, arrowSlot, arrowSpace, contentW, gapSub, gapRule, boxW, boxH };
+  };
+  const limit = insetShape(layout.labelAnchor, s.gap);
+  const fit = fitScale(limit, s.position, (f) => {
+    const m = measure(f);
+    return [m.boxW, m.boxH];
+  });
+  const { T, S, L, padX, padY, titleRow, subRow, barH, rowH, arrowSlot, arrowSpace, contentW, gapSub, gapRule, boxW, boxH } = measure(fit);
+  const placed = fit > 0 ? placeBlock(limit, s.position, boxW, boxH) : null;
   if (!placed) throw new LabelError('The legend does not fit inside the border. Make it smaller or shorten the text.');
   const [left, top] = placed;
   const x0 = left + border + padX;

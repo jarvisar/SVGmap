@@ -39,6 +39,22 @@ interface Region {
   whole: boolean;
 }
 
+// Middle of the bounding box. A loop instead of Math.min(...points), which runs
+// out of stack on a few hundred thousand points.
+function boxCentre(points: Point[]): Point {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x, y] of points) {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return [(minX + maxX) / 2, (minY + maxY) / 2];
+}
+
 // Andrew's monotone chain. Rotation doesn't change the hull, so the fit only
 // has to test its corners.
 function hull(points: Point[]): Point[] {
@@ -91,10 +107,7 @@ function region(poly: Path, margin: number, whole: boolean): Region | null {
   let inner: Path = poly;
   for (const e of edges) inner = clipConvex(inner, e.n, e.c);
   if (inner.length < 3) return null;
-  const xs = inner.map((p) => p[0]);
-  const ys = inner.map((p) => p[1]);
-  const centre: Point = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
-  return { centre, edges, whole };
+  return { centre: boxCentre(inner), edges, whole };
 }
 
 function regions(options: FitOptions): Region[] {
@@ -151,8 +164,7 @@ export function fitArea(lines: readonly LonLat[][], options: FitOptions): AreaSp
       ]
     : null;
 
-  const ys = world.map((p) => p[1]);
-  const midLat = worldToLonLat(0, (Math.min(...ys) + Math.max(...ys)) / 2, 0).lat;
+  const midLat = worldToLonLat(0, boxCentre(world)[1], 0).lat;
   const fixedK = options.widthM ? metresPerUnit(midLat, 0) / (options.widthM / options.window.w) : null;
 
   const underTitle = (p: Placement, k: number) => {
@@ -170,9 +182,7 @@ export function fitArea(lines: readonly LonLat[][], options: FitOptions): AreaSp
     const cos = Math.cos((bearing * Math.PI) / 180);
     const sin = Math.sin((bearing * Math.PI) / 180);
     const turned = corners.map((p) => rotate(p, cos, sin));
-    const us = turned.map((p) => p[0]);
-    const vs = turned.map((p) => p[1]);
-    const centre: Point = [(Math.min(...us) + Math.max(...us)) / 2, (Math.min(...vs) + Math.max(...vs)) / 2];
+    const centre = boxCentre(turned);
     const tried = parts
       .map((r) => ({ bearing, region: r, centre, k: largestScale(turned, centre, r) }))
       .sort((a, b) => b.k - a.k);

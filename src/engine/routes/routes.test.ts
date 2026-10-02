@@ -8,7 +8,7 @@ import { DEFAULT_PRODUCT } from '../presets.ts';
 import { fitArea } from './fit.ts';
 import { RouteFileError, parseRouteFile } from './parse.ts';
 import { type LonLat, decodePolyline, encodePolyline } from './polyline.ts';
-import { MAX_ROUTE_POINTS, decodeRoute, encodeRoute, routeLengthM, simplifyRoute } from './route.ts';
+import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute, encodeRoute, routeLengthM, simplifyRoute } from './route.ts';
 
 const bytes = (text: string) => new TextEncoder().encode(text).buffer as ArrayBuffer;
 const parse = (name: string, text: string) => parseRouteFile(name, bytes(text));
@@ -101,6 +101,30 @@ describe('simplifying routes', () => {
     const total = simplifyRoute([noisy]).reduce((n, l) => n + l.length, 0);
     expect(total).toBeLessThanOrEqual(MAX_ROUTE_POINTS);
     expect(total).toBeGreaterThan(100);
+  });
+
+  // This used to run Douglas-Peucker again for every step up in tolerance and
+  // took minutes on a million points.
+  it('thins out a huge noisy track without hanging', () => {
+    let seed = 1;
+    const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5) * 2;
+    const noisy: LonLat[] = Array.from({ length: 500_000 }, (_, i) => [i * 0.1 * M + random() * 5 * M, random() * 5 * M]);
+    const [line] = simplifyRoute([noisy]);
+    expect(line.length).toBeLessThanOrEqual(MAX_ROUTE_POINTS);
+    expect(line[0]).toEqual(noisy[0]);
+    expect(line[line.length - 1]).toEqual(noisy[noisy.length - 1]);
+  });
+
+  it('stays under the cap with lots of short lines', () => {
+    const lines: LonLat[][] = Array.from({ length: 8000 }, (_, i) => [
+      [i * 100 * M, 0],
+      [i * 100 * M + (i % 50) * M, 10 * M],
+    ]);
+    const out = simplifyRoute(lines);
+    expect(out).toHaveLength(MAX_ROUTE_LINES);
+    expect(out.reduce((n, l) => n + l.length, 0)).toBeLessThanOrEqual(MAX_ROUTE_POINTS);
+    // The longest ones are kept.
+    expect(out.every((line) => routeLengthM([line]) > 44)).toBe(true);
   });
 
   it('measure and decode what they encode', () => {
@@ -222,6 +246,8 @@ describe('reading route files', () => {
     await expect(parse('bad.geojson', '{"type": ')).rejects.toThrow(/couldn't be read/);
     await expect(parse('poi.gpx', '<gpx><wpt lat="1" lon="1"/></gpx>')).rejects.toThrow(/only has points/);
     await expect(parse('empty.gpx', '<gpx></gpx>')).rejects.toThrow(/no tracks/);
+    const network = { type: 'MultiLineString', coordinates: Array.from({ length: 1001 }, (_, i) => [[i * 0.01, 0], [i * 0.01, 0.005]]) };
+    await expect(parse('roads.geojson', JSON.stringify(network))).rejects.toThrow(/1,001 separate lines/);
   });
 });
 
@@ -300,6 +326,14 @@ describe('fitting the map to a route', () => {
       ],
     ];
     expect(fitArea(loop, { window, avoid: null, bearing: 0, rotate: true, margin: 5 })!.bearing).toBe(0);
+  });
+
+  // Math.min(...points) ran out of stack at around 300,000 points.
+  it('fits a route with a lot of points', () => {
+    const long: LonLat[][] = [Array.from({ length: 500_000 }, (_, i) => [-87.7 + i * 1e-7, 41.88 + Math.sin(i / 5000) * 0.01])];
+    const area = fitArea(long, { window, avoid: null, bearing: 0, rotate: false, margin: 5 });
+    expect(area).not.toBeNull();
+    expect(area!.lat).toBeCloseTo(41.88, 2);
   });
 
   it('only moves the map when the scale is locked', () => {

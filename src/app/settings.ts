@@ -4,6 +4,7 @@ import { defaultRenderSettings, defaultStyle } from '../engine/defaults.ts';
 import { fitNumber } from '../engine/limits.ts';
 import { DEFAULT_CLEANUP, type CleanupSettings } from '../engine/lines/cleanup.ts';
 import { DEFAULT_PRODUCT } from '../engine/presets.ts';
+import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute, encodeRoute } from '../engine/routes/route.ts';
 import {
   LASER_PALETTES,
   type ModeStyle,
@@ -119,7 +120,12 @@ function fitRoutes(patch: unknown): RouteData[] | undefined {
   for (const item of patch.slice(0, MAX_ROUTES)) {
     if (!isObject(item) || typeof item.id !== 'string' || typeof item.name !== 'string' || !Array.isArray(item.lines)) continue;
     if (!item.lines.every((line) => typeof line === 'string' && POLYLINE.test(line))) continue;
-    out.push({ id: item.id.slice(0, 64), name: item.name.slice(0, 100), visible: item.visible !== false, lines: item.lines as string[] });
+    // Imports are already under the caps, but an edited link might not be.
+    const lines = item.lines as string[];
+    const decoded = decodeRoute({ lines });
+    const points = decoded.reduce((sum, line) => sum + line.length, 0);
+    const capped = lines.length > MAX_ROUTE_LINES || points > MAX_ROUTE_POINTS ? encodeRoute(decoded) : lines;
+    out.push({ id: item.id.slice(0, 64), name: item.name.slice(0, 100), visible: item.visible !== false, lines: capped });
   }
   return out;
 }

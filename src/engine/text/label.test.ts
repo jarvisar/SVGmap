@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_BORDER, computeLayout } from '../layout/layout.ts';
+import { shapeContains } from '../layout/shapes.ts';
 import { PRODUCT_PRESETS } from '../presets.ts';
 import { type HersheyFile, parseHershey } from './hershey.ts';
 import { DEFAULT_LABEL, LABEL_STYLES, LabelError, type LabelStyle, buildLabel, layoutBoxLabel } from './label.ts';
@@ -162,6 +163,33 @@ describe('title styles', () => {
     // Bent along the circle, so the letters' tops and bottoms aren't level.
     const b = geometryBounds(round.text)!;
     expect(b[3] - b[1]).toBeGreaterThan(s.textHeight * 0.62 * 1.5);
+  });
+
+  it('leaves out a subtitle with nothing to draw', () => {
+    for (const style of ['band', 'badge', 'inset', 'legend'] as const) {
+      // A single-line font's hyphen is one flat stroke, and trim() keeps a zero-width space.
+      expect(buildLabel(plaque, { ...DEFAULT_LABEL, style, subtitle: '-' }, hershey, hershey, map).error).toBeNull();
+      expect(buildLabel(plaque, { ...DEFAULT_LABEL, style, subtitle: '​' }, montserrat, montserrat, map).error).toBeNull();
+    }
+  });
+
+  it('shrinks a long ribbon or legend title to fit, like the other styles', () => {
+    const square = PRODUCT_PRESETS.find((p) => p.id === 'coaster-sq-95')!;
+    const layouts = [coaster, computeLayout(square.product, { ...DEFAULT_BORDER, style: square.border })];
+    for (const style of ['ribbon', 'legend'] as const) {
+      for (const layout of layouts) {
+        const s = { ...DEFAULT_LABEL, style, text: 'WALT DISNEY WORLD', position: 'lower_center' as const };
+        const { artwork, error } = buildLabel(layout, s, montserrat, montserrat, map);
+        expect(error).toBeNull();
+        const [x, y, w, h] = artwork!.knockout;
+        const corners: [number, number][] = [[x, y], [x + w, y], [x, y + h], [x + w, y + h]];
+        expect(corners.every((p) => shapeContains(layout.labelAnchor, p))).toBe(true);
+      }
+    }
+    // A title that fits keeps its size.
+    const flat = buildLabel(plaque, { ...DEFAULT_LABEL, style: 'ribbon', ribbonArch: 0 }, montserrat, montserrat).artwork!;
+    const b = geometryBounds(flat.text)!;
+    expect(b[3] - b[1]).toBeCloseTo(DEFAULT_LABEL.textHeight * 0.8, 6);
   });
 
   it('falls back to a box for a style it does not know', () => {

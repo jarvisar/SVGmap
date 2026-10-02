@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultRenderSettings } from '../engine/defaults.ts';
 import { encodePolyline } from '../engine/routes/polyline.ts';
+import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute } from '../engine/routes/route.ts';
 import type { RouteData } from '../engine/settings.ts';
 import { decodeSettings, encodeSettings } from './share.ts';
 import { defaultSettings, mergeSettings, toRenderSettings } from './settings.ts';
@@ -124,6 +125,13 @@ describe('saved routes', () => {
     expect(merged.routes.items[1].name).toHaveLength(100);
     expect(merged.routes.width).toBe(10);
     expect(mergeSettings(defaultSettings(), { routes: { items: { 0: ROUTE } } }).routes.items).toEqual([]);
+  });
+
+  it('are brought under the caps when a link has too many points', () => {
+    const many = Array.from({ length: 3000 }, (_, i) => encodePolyline([[i * 0.001, 0], [i * 0.001, 0.0005], [i * 0.001 + 0.0002, 0.001]]));
+    const [route] = mergeSettings(defaultSettings(), { routes: { items: [{ ...ROUTE, lines: many }] } }).routes.items;
+    expect(route.lines).toHaveLength(MAX_ROUTE_LINES);
+    expect(decodeRoute(route).reduce((n, l) => n + l.length, 0)).toBeLessThanOrEqual(MAX_ROUTE_POINTS);
   });
 
   it('only accept known ways of drawing them', () => {

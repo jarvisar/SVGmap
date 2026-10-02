@@ -225,6 +225,22 @@ export function placeBlock(limit: Shape, position: CornerPosition, w: number, h:
   return nudgeInside(limit, start[0], start[1], w, h);
 }
 
+// The biggest scale up to 1 that placeBlock can fit, so long text shrinks
+// instead of failing. size gives the block's width and height at a scale.
+// 0 when nothing fits.
+export function fitScale(limit: Shape, position: CornerPosition, size: (scale: number) => [number, number]): number {
+  const fits = (scale: number) => placeBlock(limit, position, ...size(scale)) !== null;
+  if (fits(1)) return 1;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
 // A five-pointed star, point up.
 export function star(cx: number, cy: number, r: number): Path {
   const out: Path = [];

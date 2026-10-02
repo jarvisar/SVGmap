@@ -1,7 +1,7 @@
 // Reads route files: GPX, KML, KMZ, TCX and GeoJSON. Every track, route and
 // line in the file becomes part of one route. Points and waypoints are skipped.
 import type { LonLat } from './polyline.ts';
-import { distanceM } from './route.ts';
+import { MAX_ROUTE_LINES, distanceM } from './route.ts';
 import { walkXml } from './xml.ts';
 import { ZipError, kmlFromKmz } from './zip.ts';
 
@@ -352,6 +352,9 @@ export async function parseRouteFile(fileName: string, data: ArrayBuffer): Promi
         ? 'This file only has points or waypoints in it. A route needs a track or a line.'
         : 'There are no tracks, routes or lines in this file.',
     );
+  }
+  if (lines.length > MAX_ROUTE_LINES) {
+    throw new RouteFileError(`This file has ${lines.length.toLocaleString('en')} separate lines. A route can have up to ${MAX_ROUTE_LINES.toLocaleString('en')}.`);
   }
   const base = fileName.replace(/^.*[\\/]/, '');
   return { name: tidyName(contents.name) || tidyName(base) || 'Route', lines };
