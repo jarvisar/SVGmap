@@ -24,10 +24,10 @@ The settings are:
 
 * Location sets the area. Map width and scale are two ways of saying the same thing.
 * Routes adds runs, rides and other routes from GPX and similar files. See below.
-* Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border.
+* Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border and its colours.
 * Output switches between laser, plotter and print.
 * Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline or hatching). The footpath options can skip sidewalks and crossings. See below.
-* Title adds a title and subtitle in one of seven styles. See below. You can load your own font file.
+* Title adds a title and subtitle in one of seven styles. See below. You can load your own font file and set the colour of the lettering and of its lines.
 * Line cleanup removes doubled and crowded lines. See below.
 * Map data sets where the map tiles come from, and can add buildings OpenStreetMap is missing. See below.
 
@@ -41,7 +41,7 @@ When a new version is deployed, a notice asks you to reload. It never reloads on
 
 ## Output Modes
 
-* Laser: filled areas engrave, lines score and the edge cuts. Every layer gets its own colour so it can get its own process. The `LightBurn layer palette` option uses LightBurn's colours so each layer lands on its own LightBurn layer, and `Minimal` gives three processes (engrave, score, cut).
+* Laser: filled areas engrave, lines score and the edge cuts. Every layer gets its own colour so it can get its own process. The `LightBurn layer palette` option uses LightBurn's colours so each layer lands on its own LightBurn layer, and `Minimal` gives three processes (engrave, score, cut). `Line width` sets the stroke of every scored line and the cut. Some drivers engrave anything wider than a hairline. Epilog's needs 0.025 mm (0.001 in) or less. The preview can show the piece on birch, walnut, cork, leather, slate or black acrylic, and the `PNG` button saves it that way.
 * Plotter: everything is a stroke. Filled areas are hatched and the strokes are ordered to cut down pen-up travel. Each pen colour becomes a numbered layer (`1 - pen #000000`) that AxiDraw, vpype and saxi can split on. Single-line Hershey fonts are included for titles.
 * Print: coloured themes with wider lines for bigger roads.
 
@@ -151,7 +151,7 @@ Run the tests with `npm test`. The live render test is skipped unless `SVGMAP_NE
 * Picked roads make share links longer, by about 40 bytes for each line picked.
 * Undo starts over when the page is reloaded and keeps the last 100 changes.
 * Custom fonts can be TTF, OTF or WOFF. WOFF2 files don't load. A font whose ligatures or Arabic joining opentype.js can't read, like Calibri, is drawn a letter at a time, with a warning. Letters the font doesn't have are drawn as boxes, or left out, and listed in a warning.
-* The wood preview is only a rough idea of how the fills will look. Test your settings on scrap.
+* The material preview is only a rough idea of how the fills will look. Test your settings on scrap.
 * On the very first visit, the map style loads before the service worker starts, so it isn't saved until the next visit. Going offline right after a first visit can leave the map blank, but maps that were already generated can still be generated again.
 * Overture buildings are only added at full detail (zoom 14), so a map that needs more tiles than the limit gets a warning instead. Maps that would need more than 150 MB of building data, or that cross the 180th meridian, are left without them.
 * Machine-learning footprints are rougher than mapped ones: blobby corners, whole blocks merged into one shape, and now and then something that isn't a building.

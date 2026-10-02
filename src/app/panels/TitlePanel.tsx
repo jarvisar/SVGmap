@@ -4,10 +4,11 @@ import { type LabelPreset, applyLabelPreset, formatCoordinates } from '../../eng
 import type { FillMode } from '../../engine/settings.ts';
 import { CUSTOM_FONT_ID, FONTS, fontInfo } from '../../engine/text/fonts.ts';
 import { type LabelPosition, type LabelSettings, type LabelStyle, SUBTITLED } from '../../engine/text/label.ts';
-import { Check, Disclosure, Field, NumberField, Section, Segmented, SelectField, Slider, TextField } from '../components/controls.tsx';
+import { Check, ColorInput, Disclosure, Field, NumberField, Section, Segmented, Select, SelectField, Slider, TextField } from '../components/controls.tsx';
 import { checkFont, storeFont } from '../customFont.ts';
 import { AUTOFIT_HELP, RESET_OFFSET, boxResized, labelMoved } from '../labelDrag.ts';
 import { useApp } from '../store.ts';
+import { HatchOptions } from './LayersPanel.tsx';
 import { PresetPicker, STYLE_NAMES, StylePicker } from './TitleLooks.tsx';
 
 const POSITIONS: { value: LabelPosition; label: string }[] = [
@@ -25,6 +26,16 @@ const LETTERING: Record<FillMode, string> = {
   outline: 'Outline',
   hatch: 'Hatched',
   'hatch-outline': 'Hatched with outline',
+};
+
+// What the line colour applies to. Solid shapes and ornaments go with the lettering.
+const LINES_HINT: Partial<Record<LabelStyle, string>> = {
+  box: 'The box outline.',
+  band: 'The divider and the rule under the title.',
+  ribbon: 'The ribbon outline and folds.',
+  badge: 'The rings.',
+  letters: 'The letter outlines.',
+  legend: 'The box, scale bar and north arrow outlines.',
 };
 
 // Styles placed in a corner.
@@ -93,6 +104,9 @@ export function TitlePanel() {
   const letteringMode = mode === 'plotter' && style.fillModes.text === 'fill' ? 'hatch-outline' : style.fillModes.text;
   const singleLine = fontInfo(label.font)?.kind === 'stroke';
   const solidHint = 'Engraves the shape and leaves the letters bare.';
+  const hasLines =
+    kind === 'box' ? label.boxBorder && !label.solid : kind === 'band' ? label.divider || label.ornament : kind === 'letters' ? mapInLetters : kind !== 'inset';
+  const setColor = (element: 'text' | 'frame', color: string) => setStyle({ colors: { ...style.colors, [element]: color } });
 
   return (
     <Section title="Title" summary={label.enabled && label.text.trim() ? `${label.text} (${STYLE_NAMES[kind].toLowerCase()})` : 'Off'}>
@@ -200,14 +214,24 @@ export function TitlePanel() {
           {AUTOFIT_HELP[kind] ? <Check label="Autofit text" title={AUTOFIT_HELP[kind]} checked={label.autofit} onChange={(autofit) => set({ autofit })} /> : null}
           <Slider label="Letter spacing" value={label.titleSpacing} min={80} max={200} step={5} limits={fieldRange('label.titleSpacing', 100)} scale={100} unit="%" onChange={(titleSpacing) => set({ titleSpacing })} />
           {mapInLetters ? null : (
-            <SelectField<FillMode>
-              label="Lettering"
-              value={letteringMode}
-              options={fillModes.map((m) => ({ value: m, label: LETTERING[m] }))}
-              onChange={(m) => setStyle({ fillModes: { ...style.fillModes, text: m } })}
-              hint={singleLine ? 'Single-line fonts are always drawn as strokes.' : undefined}
-            />
+            <Field label="Lettering" hint={singleLine ? 'Single-line fonts are always drawn as strokes.' : undefined}>
+              <div className="route-style">
+                <ColorInput label="Lettering colour" value={style.colors.text} onChange={(color) => setColor('text', color)} />
+                <Select<FillMode>
+                  label="Lettering"
+                  value={letteringMode}
+                  options={fillModes.map((m) => ({ value: m, label: LETTERING[m] }))}
+                  onChange={(m) => setStyle({ fillModes: { ...style.fillModes, text: m } })}
+                />
+              </div>
+            </Field>
           )}
+          {!mapInLetters && !singleLine && (letteringMode === 'hatch' || letteringMode === 'hatch-outline') ? <HatchOptions layer="text" /> : null}
+          {hasLines ? (
+            <Field label="Lines" hint={LINES_HINT[kind]}>
+              <ColorInput label="Line colour" value={style.colors.frame} onChange={(color) => setColor('frame', color)} />
+            </Field>
+          ) : null}
 
           {kind === 'box' ? (
             <>
@@ -307,7 +331,10 @@ export function TitlePanel() {
                   <NumberField label="Padding (sides)" value={label.bandPaddingX} min={0} max={50} step={0.1} unit="mm" onChange={(bandPaddingX) => set({ bandPaddingX })} />
                   <NumberField label="Padding (top, bottom)" value={label.bandPaddingY} min={0} max={50} step={0.1} unit="mm" onChange={(bandPaddingY) => set({ bandPaddingY })} />
                 </div>
-                <NumberField label="Divider width" value={label.dividerWidth} min={0.01} max={3} step={0.05} unit="mm" onChange={(dividerWidth) => set({ dividerWidth })} />
+                <div className="row">
+                  <NumberField label="Divider width" value={label.dividerWidth} min={0.01} max={3} step={0.05} unit="mm" onChange={(dividerWidth) => set({ dividerWidth })} />
+                  <NumberField label="Divider inset" value={label.dividerInset} {...fieldRange('label.dividerInset')} step={0.5} unit="mm" onChange={(dividerInset) => set({ dividerInset })} />
+                </div>
               </>
             ) : kind === 'box' ? (
               <>

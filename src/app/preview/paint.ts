@@ -2,9 +2,20 @@ import type { OutputGroup, RenderResult } from '../../engine/result.ts';
 import type { ElementId } from '../../engine/settings.ts';
 import type { PreviewLook } from '../store.ts';
 
-const WOOD = '#E8D2AC';
-const BURN = '#3A2415';
-// Rough darkness of each fill in the wood preview, since each gets its own process.
+// Rough looks for the laser preview and the PNG. Dark materials mark light.
+export const MATERIALS = {
+  birch: { name: 'Birch', base: '#E8D2AC', mark: '#3A2415' },
+  walnut: { name: 'Walnut', base: '#6E4B33', mark: '#22140B' },
+  cork: { name: 'Cork', base: '#C9A273', mark: '#3E2614' },
+  leather: { name: 'Leather', base: '#8A5A36', mark: '#2B180C' },
+  slate: { name: 'Slate', base: '#3E4246', mark: '#D9DCDE' },
+  acrylic: { name: 'Black acrylic', base: '#151515', mark: '#E6E6E6' },
+} as const;
+export type MaterialId = keyof typeof MATERIALS;
+
+const material = (result: RenderResult, look: PreviewLook) => (result.mode === 'laser' && look !== 'colors' ? (MATERIALS[look] ?? MATERIALS.birch) : null);
+
+// Rough strength of each fill in the material preview, since each gets its own process.
 const BURN_OPACITY: Partial<Record<ElementId, number>> = {
   buildings: 0.92,
   text: 0.95,
@@ -27,29 +38,32 @@ export interface Paint {
 }
 
 export function previewBackground(result: RenderResult, look: PreviewLook) {
-  return result.mode === 'laser' ? (look === 'material' ? WOOD : '#fff') : (result.background ?? '#fff');
+  return result.mode === 'laser' ? (material(result, look)?.base ?? '#fff') : (result.background ?? '#fff');
 }
 
 // The colour an element is drawn in, for a title drawn over the result while it's moved.
 export function previewInk(result: RenderResult, look: PreviewLook, element: ElementId) {
-  if (result.mode === 'laser' && look === 'material') return BURN;
+  const m = material(result, look);
+  if (m) return m.mark;
   return result.groups.find((g) => g.element === element)?.color ?? '#222222';
 }
 
 export function groupPaint(group: OutputGroup, result: RenderResult, look: PreviewLook): Paint {
-  const laserMaterial = result.mode === 'laser' && look === 'material';
+  const m = material(result, look);
   if (group.id === 'cut') {
-    return { fill: 'none', stroke: laserMaterial ? 'rgba(0,0,0,0.35)' : group.color, strokeWidth: laserMaterial ? 0.3 : Math.max(group.strokeWidth, 0.12) };
+    return m
+      ? { fill: 'none', stroke: m.mark, strokeOpacity: 0.35, strokeWidth: 0.3 }
+      : { fill: 'none', stroke: group.color, strokeWidth: Math.max(group.strokeWidth, 0.12) };
   }
   if (group.kind === 'fill') {
-    return laserMaterial
-      ? { fill: BURN, fillOpacity: BURN_OPACITY[group.element] ?? 0.8, stroke: 'none' }
+    return m
+      ? { fill: m.mark, fillOpacity: BURN_OPACITY[group.element] ?? 0.8, stroke: 'none' }
       : { fill: group.color, stroke: 'none' };
   }
   // A scored route has its own process, normally a deeper one than the streets.
   const route = group.element === 'route';
   const width = result.mode === 'laser' ? (route ? 0.2 : 0.12) : group.strokeWidth;
-  return laserMaterial
-    ? { fill: 'none', stroke: BURN, strokeOpacity: route ? 1 : 0.85, strokeWidth: width }
+  return m
+    ? { fill: 'none', stroke: m.mark, strokeOpacity: route ? 1 : 0.85, strokeWidth: width }
     : { fill: 'none', stroke: group.color, strokeWidth: width };
 }

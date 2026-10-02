@@ -83,6 +83,14 @@ describe('settings', () => {
     expect(decodeSettings(encodeSettings(settings))!.label.size).toBe(250);
   });
 
+  it('brings the old wood preview over as birch and drops unknown materials', () => {
+    const base = useApp.getState();
+    expect(mergeSettings(base, { previewLook: 'walnut' }).previewLook).toBe('walnut');
+    expect(mergeSettings(base, { previewLook: 'colors' }).previewLook).toBe('colors');
+    expect(mergeSettings(base, { previewLook: 'material' }).previewLook).toBe('birch');
+    expect(mergeSettings(base, { previewLook: 'toString' }).previewLook).toBe('birch');
+  });
+
   it('keeps a transparent background', () => {
     const merged = mergeSettings(defaultSettings(), { styles: { print: { background: null } } });
     expect(merged.styles.print.background).toBeNull();

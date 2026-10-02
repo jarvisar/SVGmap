@@ -2,12 +2,12 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
 import type { RenderResult } from '../../engine/result.ts';
 import type { LabelSettings } from '../../engine/text/label.ts';
-import { Segmented } from '../components/controls.tsx';
+import { Select } from '../components/controls.tsx';
 import { type TitleDrag, type TitleGrip, canDrag, dragTitle, droppedLabel, handleAt, resizeCursor, spacedHandles, titleAt, titleHandles } from '../labelDrag.ts';
 import { useLabelArtwork } from '../map/useLabelArtwork.ts';
 import { useRender } from '../render.ts';
 import { type PreviewLook, useApp } from '../store.ts';
-import { groupPaint, previewBackground } from './paint.ts';
+import { MATERIALS, type MaterialId, groupPaint, previewBackground } from './paint.ts';
 import { PickIndex, PickOverlay, RoadRouteCard } from './RoutePicker.tsx';
 import { TitleCard, TitleFrame, TitleGhost } from './TitleTools.tsx';
 
@@ -429,12 +429,13 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
           Pick roads
         </button>
         {result.mode === 'laser' ? (
-          <Segmented<PreviewLook>
+          <Select<PreviewLook>
             label="Preview colours"
+            className="select preview-look"
             value={look}
             options={[
-              { value: 'material', label: 'Wood' },
-              { value: 'colors', label: 'Colours' },
+              ...Object.entries(MATERIALS).map(([value, m]) => ({ value: value as MaterialId, label: m.name })),
+              { value: 'colors', label: 'File colours' },
             ]}
             onChange={setLook}
           />

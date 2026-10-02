@@ -32,6 +32,7 @@ export const LIMITS: Record<string, Limit> = {
   'style.hatch.*.angle': { min: -180, max: 180 },
   'style.lineWidths.*': { min: 0.02, max: 5 },
   'plotter.penWidth': { min: 0.05, max: 3 },
+  'laser.lineWidth': { min: 0.001, max: 1 },
   'water.halo': { min: 0, max: 3 },
   'water.bridgeGap': { min: 0, max: 3 },
   'routes.width': { min: 0.1, max: 10 },

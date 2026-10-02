@@ -123,6 +123,13 @@ describe('rendering a real tile', () => {
     expect(result.groups.find((g) => g.id === 'band')!.strokeWidth).toBe(0.05);
   });
 
+  it('scores and cuts at the laser line width', () => {
+    const { result } = render('laser', { laser: { lineWidth: 0.0254 } });
+    const svg = toSvg(result);
+    for (const id of ['roads', 'cut']) expect(result.groups.find((g) => g.id === id)!.strokeWidth).toBe(0.0254);
+    expect(svg).toContain('id="cut" inkscape:groupmode="layer" inkscape:label="Cut line" fill="none" stroke="#E31A1C" stroke-width="0.025"');
+  });
+
   it('copes with very fine hatching and zero cleanup tolerances', () => {
     const plotter = defaultRenderSettings('plotter');
     const hatch = { ...plotter.style.hatch, buildings: { spacing: 0, angle: 45, cross: true } };

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { LayoutError, computeLayout } from '../../engine/layout/layout.ts';
 import type { ShapeKind } from '../../engine/layout/shapes.ts';
 import { PRODUCT_PRESETS } from '../../engine/presets.ts';
-import { Check, Disclosure, Field, NumberField, Section, Segmented, SelectField } from '../components/controls.tsx';
+import { Check, ColorInput, Disclosure, Field, NumberField, Section, Segmented, SelectField } from '../components/controls.tsx';
 import { useApp } from '../store.ts';
 
 export function SizePanel() {
@@ -12,6 +12,8 @@ export function SizePanel() {
   const setProduct = useApp((s) => s.setProduct);
   const applyPreset = useApp((s) => s.applyProductPreset);
   const setBorder = useApp((s) => s.setBorder);
+  const colors = useApp((s) => s.styles[s.mode].colors);
+  const setStyle = useApp((s) => s.setStyle);
 
   const layout = useMemo(() => {
     try {
@@ -152,6 +154,16 @@ export function SizePanel() {
         ]}
         onChange={(style) => setBorder({ style })}
       />
+      {border.style !== 'none' ? (
+        <Field label={border.style === 'double' ? 'Band and line colours' : 'Line colour'}>
+          <div className="route-style">
+            {border.style === 'double' ? (
+              <ColorInput label="Border band colour" value={colors.band} onChange={(band) => setStyle({ colors: { ...colors, band } })} />
+            ) : null}
+            <ColorInput label="Border line colour" value={colors.border} onChange={(line) => setStyle({ colors: { ...colors, border: line } })} />
+          </div>
+        </Field>
+      ) : null}
       {border.style !== 'none' ? (
         <Disclosure label="Border measurements">
           <div className="row">

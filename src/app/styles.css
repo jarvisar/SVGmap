@@ -1374,6 +1374,11 @@ button.menu-toggle,
   padding: 0 10px;
 }
 
+.preview-toolbar .preview-look {
+  width: auto;
+  box-shadow: var(--btn-highlight), var(--shadow-float);
+}
+
 .preview-toolbar .button-group .btn {
   min-width: 30px;
   height: 26px;

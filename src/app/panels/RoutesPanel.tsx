@@ -6,6 +6,7 @@ import type { OutputMode, RouteData, RouteDraw } from '../../engine/settings.ts'
 import { Check, ColorInput, Field, NumberField, Section, Select } from '../components/controls.tsx';
 import { ROUTE_ACCEPT, fitMapToRoutes, importRouteFiles, shareOutside, visibleRouteLines } from '../routes.ts';
 import { useApp } from '../store.ts';
+import { HatchOptions } from './LayersPanel.tsx';
 
 const DRAW_LABELS: Record<OutputMode, Record<RouteDraw, string>> = {
   laser: { fill: 'Engraved band', outline: 'Outlined band', hatch: 'Hatched band', 'hatch-outline': 'Hatched band + outline', line: 'Scored line' },
@@ -52,22 +53,6 @@ function RouteRow(props: { route: RouteData }) {
         </svg>
       </button>
     </div>
-  );
-}
-
-function RouteHatch() {
-  const style = useApp((s) => s.styles[s.mode]);
-  const setStyle = useApp((s) => s.setStyle);
-  const h = style.hatch.route;
-  const update = (patch: Partial<typeof h>) => setStyle({ hatch: { ...style.hatch, route: { ...h, ...patch } } });
-  return (
-    <>
-      <div className="row">
-        <NumberField label="Hatch spacing" value={h.spacing} {...fieldRange('style.hatch.route.spacing')} step={0.05} unit="mm" onChange={(spacing) => update({ spacing })} />
-        <NumberField label="Angle" value={h.angle} {...fieldRange('style.hatch.route.angle')} step={5} unit="°" onChange={(angle) => update({ angle })} />
-      </div>
-      <Check label="Cross-hatch" checked={h.cross} onChange={(cross) => update({ cross })} />
-    </>
   );
 }
 
@@ -176,7 +161,7 @@ export function RoutesPanel() {
             ) : null}
             <NumberField label="Gap around it" value={routes.gap} {...fieldRange('routes.gap')} step={0.05} unit="mm" onChange={(gap) => setRoutes({ gap })} />
           </div>
-          {hatched ? <RouteHatch /> : null}
+          {hatched ? <HatchOptions layer="route" /> : null}
           <Check label="Start and finish markers" checked={routes.markers} onChange={(markers) => setRoutes({ markers })} />
           {routes.markers ? (
             <NumberField label="Marker size" value={routes.markerSize} {...fieldRange('routes.markerSize')} step={0.1} unit="mm" onChange={(markerSize) => setRoutes({ markerSize })} />

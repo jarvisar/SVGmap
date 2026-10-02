@@ -100,6 +100,12 @@ export interface PlotterSettings {
   optimize: boolean;
 }
 
+export interface LaserSettings {
+  // Stroke width of every scored line and the cut, mm. Some drivers only cut
+  // or score true hairlines and engrave anything wider, Epilog's at 0.001 in.
+  lineWidth: number;
+}
+
 export interface RenderSettings {
   area: AreaSpec;
   product: ProductSettings;
@@ -115,6 +121,7 @@ export interface RenderSettings {
   routes: RouteSettings;
   source: SourceSettings;
   plotter: PlotterSettings;
+  laser: LaserSettings;
   // Roads picked out in the preview, each road route a group of its own.
   roadRoutes: RoadRoute[];
   // Roads picked to be left out.
@@ -444,4 +451,5 @@ export const DEFAULTS = {
   decks: { knockout: true, engrave: false } satisfies DeckSettings,
   source: DEFAULT_SOURCE,
   plotter: { penWidth: 0.3, optimize: true } satisfies PlotterSettings,
+  laser: { lineWidth: 0.05 } satisfies LaserSettings,
 };

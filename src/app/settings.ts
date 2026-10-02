@@ -19,6 +19,7 @@ import {
   defaultLineSpacing,
 } from '../engine/settings.ts';
 import { DEFAULT_LABEL, LABEL_CHOICES, type LabelSettings } from '../engine/text/label.ts';
+import { MATERIALS } from './preview/paint.ts';
 
 export type CleanupPreset = 'off' | 'light' | 'standard' | 'strong' | 'custom';
 export type LaserPalette = keyof typeof LASER_PALETTES;
@@ -93,6 +94,7 @@ export function toRenderSettings(s: Settings): RenderSettings {
     routes: s.routes,
     source: s.source,
     plotter: s.plotter,
+    laser: s.laser,
     roadRoutes: s.roadRoutes,
     hiddenLines: s.hiddenLines,
     title: s.label.text.trim() || 'Map',
@@ -111,6 +113,8 @@ function validString(path: string[], value: string): boolean {
   const key = path[path.length - 1];
   if (key === 'background' || path[path.length - 2] === 'colors') return HEX_COLOR.test(value);
   if (path.length === 1 && key === 'mode') return OUTPUT_MODES.includes(value);
+  // Saved before there was a choice of material, 'material' was the wood one and falls back to birch.
+  if (path.length === 1 && key === 'previewLook') return value === 'colors' || Object.hasOwn(MATERIALS, value);
   if (key === 'routeDraw') return (ROUTE_DRAWS as string[]).includes(value);
   if (path.length === 2 && path[0] === 'label') return LABEL_CHOICES[key as keyof LabelSettings]?.includes(value) ?? true;
   return true;

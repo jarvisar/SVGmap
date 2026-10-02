@@ -18,6 +18,7 @@ import type { LabelSettings } from '../engine/text/label.ts';
 import { fontFingerprint } from '../engine/text/fonts.ts';
 import type { CustomFont } from '../engine/text/loadFont.ts';
 import type { FeatureFilters } from '../engine/tiles/schema.ts';
+import type { MaterialId } from './preview/paint.ts';
 import {
   type CleanupPreset,
   type LaserPalette,
@@ -31,7 +32,8 @@ import {
 } from './settings.ts';
 
 export type View = 'map' | 'preview';
-export type PreviewLook = 'material' | 'colors';
+// A material for the laser preview, or the file's own colours.
+export type PreviewLook = MaterialId | 'colors';
 
 // Width of the map window in mm, which the 1:n scale is measured against.
 export function windowWidth(product: ProductSettings, border: BorderSettings): number {
@@ -123,7 +125,7 @@ export const useApp = create<AppState>()(
       ...defaultSettings(),
       view: 'map',
       setView: (view) => set({ view }),
-      previewLook: 'material',
+      previewLook: 'birch',
       setPreviewLook: (previewLook) => set({ previewLook }),
       customFontName: null,
       customFontId: null,
@@ -259,6 +261,7 @@ export const selectSettings = (s: AppState): Settings => ({
   routes: s.routes,
   source: s.source,
   plotter: s.plotter,
+  laser: s.laser,
   roadRoutes: s.roadRoutes,
   hiddenLines: s.hiddenLines,
 });

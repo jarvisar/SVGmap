@@ -134,7 +134,7 @@ export function compose(
   const plotter = s.mode === 'plotter';
   // Same floor as the UI. A zero pen width would never finish the band passes below.
   const pen = Math.max(s.plotter.penWidth, 0.05);
-  const hairline = plotter ? pen : s.mode === 'laser' ? 0.05 : 0.1;
+  const hairline = plotter ? pen : s.mode === 'laser' ? s.laser.lineWidth : 0.1;
 
   // Title
   const map = { metresPerMm: prepared.transform.metresPerMm, bearing: s.area.bearing };

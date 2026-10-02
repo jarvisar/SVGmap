@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from 'react';
+import { fieldRange } from '../../engine/limits.ts';
 import {
   type FillLayerId,
   type FillMode,
@@ -123,7 +124,8 @@ function FilterChecks(props: { layer: LayerId }) {
   );
 }
 
-function HatchOptions(props: { layer: FillLayerId }) {
+// Also used for the title lettering and the route band.
+export function HatchOptions(props: { layer: FillLayerId | 'text' | 'route' }) {
   const style = useApp((s) => s.styles[s.mode]);
   const setStyle = useApp((s) => s.setStyle);
   const h = style.hatch[props.layer];
@@ -131,8 +133,8 @@ function HatchOptions(props: { layer: FillLayerId }) {
   return (
     <>
       <div className="row">
-        <NumberField label="Hatch spacing" value={h.spacing} min={0.1} max={10} step={0.05} unit="mm" onChange={(spacing) => update({ spacing })} />
-        <NumberField label="Angle" value={h.angle} min={-180} max={180} step={5} unit="°" onChange={(angle) => update({ angle })} />
+        <NumberField label="Hatch spacing" value={h.spacing} {...fieldRange('style.hatch.*.spacing')} step={0.05} unit="mm" onChange={(spacing) => update({ spacing })} />
+        <NumberField label="Angle" value={h.angle} {...fieldRange('style.hatch.*.angle')} step={5} unit="°" onChange={(angle) => update({ angle })} />
       </div>
       <Check label="Cross-hatch" checked={h.cross} onChange={(cross) => update({ cross })} />
     </>
