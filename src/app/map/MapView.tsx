@@ -6,13 +6,18 @@ import { metresPerPixel, zoomForMetres } from '../../engine/geo/mercator.ts';
 import type { AreaSpec } from '../../engine/geo/transform.ts';
 import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
 import { bandPathD, shapePathD } from '../../engine/layout/shapes.ts';
+import { type MapMark, markPlacedAt, markPoint } from '../../engine/marks/marks.ts';
 import type { LabelArtwork, LabelSettings } from '../../engine/text/label.ts';
 import { LockIcon } from '../components/controls.tsx';
 import { type HandleSpot, type TitleDrag, type TitleGrip, canDrag, dragTitle, droppedLabel, handleAt, resizeCursor, spacedHandles, titleAt, titleHandles } from '../labelDrag.ts';
+import { MARK_REACH_PX, type PlacedMark, markAt } from '../markDrag.ts';
+import { markTransform, selectMark, updateMark, useMarkUi } from '../marks.ts';
+import { MarkDrawing, MarkFrames } from '../preview/MarkTools.tsx';
 import { routesGeoJson } from '../routes.ts';
 import { scaleOf, useApp } from '../store.ts';
-import { BREAK_MASK, BorderBreakMask, TitleOverlay } from './TitleOverlay.tsx';
+import { BREAK_MASK, BorderBreakMask, INK, PAPER, TitleOverlay } from './TitleOverlay.tsx';
 import { useLabelArtwork } from './useLabelArtwork.ts';
+import { useMarkArtworks } from './useMarkArtwork.ts';
 
 const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
 
@@ -141,8 +146,23 @@ export function MapView() {
     if (Math.max(artwork.knockout[2], artwork.knockout[3]) * frame.scale < 24) return [];
     return spacedHandles(titleHandles(layout, shownLabel, artwork), (x, y) => [x * frame.scale, y * frame.scale], HANDLE_GAP);
   }, [titleSelected, artwork, layout, frame, shownLabel]);
-  const latest = useRef({ layout, label, artwork, layoutWith, frame, handles });
-  latest.current = { layout, label, artwork, layoutWith, frame, handles };
+  // Pins and text, which can be dragged on the map too. Resizing and turning
+  // them is left to the preview and the sidebar.
+  const marks = useApp((s) => s.marks);
+  const selectedMark = useMarkUi((s) => s.selected);
+  const liveMarks = useMarkArtworks(marks, label.font, customFontId);
+  const [markDragged, setMarkDragged] = useState<MapMark | null>(null);
+  const [markHover, setMarkHover] = useState<string | null>(null);
+  const placedMarks: PlacedMark[] = useMemo(() => {
+    if (!layout) return [];
+    const transform = markTransform(area, layout);
+    return marks.map((m) => {
+      const mark = markDragged?.id === m.id ? markDragged : m;
+      return { mark, art: liveMarks.layoutWith(mark), at: markPoint(mark, transform, layout.window) };
+    });
+  }, [marks, markDragged, liveMarks, area, layout]);
+  const latest = useRef({ layout, label, artwork, layoutWith, frame, handles, placedMarks, area });
+  latest.current = { layout, label, artwork, layoutWith, frame, handles, placedMarks, area };
   useEffect(() => {
     if (!artwork) setTitleSelected(false);
   }, [artwork]);
@@ -154,6 +174,7 @@ export function MapView() {
     const wrap = wrapRef.current;
     if (!wrap) return;
     let grab: { pointerId: number; start: Point; screen: Point; moved: boolean; drag: TitleDrag; to: LabelSettings | null } | null = null;
+    let markGrab: { pointerId: number; start: Point; screen: Point; moved: boolean; from: PlacedMark; to: MapMark | null } | null = null;
     const onCanvas = (e: Event) => {
       const map = mapRef.current;
       return Boolean(map && e.target instanceof Node && map.getCanvasContainer().contains(e.target));
@@ -170,6 +191,26 @@ export function MapView() {
       if (!p || !shown || !f) return null;
       return handleAt(spots, p[0], p[1], HANDLE_REACH / f.scale) ?? (titleAt(stored, shown, p[0], p[1]) ? 'move' : null);
     };
+    const markUnder = (e: { clientX: number; clientY: number }): PlacedMark | null => {
+      const { placedMarks: items, frame: f } = latest.current;
+      const p = toPiece(e);
+      if (!p || !f) return null;
+      const id = markAt(
+        items.filter((i) => !i.art.empty),
+        p,
+        MARK_REACH_PX / f.scale,
+      );
+      return items.find((i) => i.mark.id === id) ?? null;
+    };
+    const finishMark = (keep: boolean) => {
+      const g = markGrab;
+      markGrab = null;
+      if (keep && g?.moved && g.to) {
+        const { id, ...patch } = g.to;
+        updateMark(id, patch);
+      }
+      setMarkDragged(null);
+    };
     const setCursor = (cursor: string) => {
       const container = mapRef.current?.getCanvasContainer();
       if (container) container.style.cursor = cursor;
@@ -183,14 +224,32 @@ export function MapView() {
       setDragged(null);
     };
     const onDown = (e: PointerEvent) => {
-      if (grab) {
-        // A second finger puts the title back and pinches the map instead.
-        // MapLibre finds both fingers on this one's touchstart.
+      if (grab || markGrab) {
+        // A second finger puts the title or mark back and pinches the map
+        // instead. MapLibre finds both fingers on this one's touchstart.
         finish(false);
+        finishMark(false);
         setCursor('');
         return;
       }
       if (!onCanvas(e) || e.button !== 0) return;
+      // Marks are drawn over the title, so they come first.
+      const hit = markUnder(e);
+      const from = toPiece(e);
+      if (hit && from) {
+        e.stopPropagation();
+        e.preventDefault();
+        try {
+          wrap.setPointerCapture(e.pointerId);
+        } catch {
+          // Best effort, as with the title.
+        }
+        markGrab = { pointerId: e.pointerId, start: from, screen: [e.clientX, e.clientY], moved: false, from: hit, to: null };
+        selectMark(hit.mark.id);
+        setTitleSelected(false);
+        setCursor('move');
+        return;
+      }
       const grip = gripAt(e);
       const { artwork: shown, label: stored } = latest.current;
       const start = toPiece(e);
@@ -215,6 +274,19 @@ export function MapView() {
       return spot ? resizeCursor(spot.dx, spot.dy) : null;
     };
     const onMove = (e: PointerEvent) => {
+      if (markGrab && e.pointerId === markGrab.pointerId) {
+        e.stopPropagation();
+        if (!markGrab.moved && Math.hypot(e.clientX - markGrab.screen[0], e.clientY - markGrab.screen[1]) < DRAG_START_PX) return;
+        markGrab.moved = true;
+        const { layout: at, area: now } = latest.current;
+        const p = toPiece(e);
+        if (!at || !p) return;
+        const { from, start } = markGrab;
+        const spot: Point = [from.at[0] + p[0] - start[0], from.at[1] + p[1] - start[1]];
+        markGrab.to = { ...from.mark, ...markPlacedAt(spot, markTransform(now, at), at.window) };
+        setMarkDragged(markGrab.to);
+        return;
+      }
       if (grab && e.pointerId === grab.pointerId) {
         e.stopPropagation();
         // A click that wobbles a pixel or two only selects it.
@@ -227,12 +299,20 @@ export function MapView() {
         setDragged(grab.to);
         return;
       }
-      if (grab || e.buttons || !onCanvas(e)) return;
-      const grip = gripAt(e);
+      if (grab || markGrab || e.buttons || !onCanvas(e)) return;
+      const hit = markUnder(e);
+      const grip = hit ? null : gripAt(e);
+      setMarkHover(hit?.mark.id ?? null);
       setTitleHover(grip !== null);
-      setCursor(grip ? (cursorOf(grip) ?? 'move') : '');
+      setCursor(hit ? 'move' : grip ? (cursorOf(grip) ?? 'move') : '');
     };
     const onUp = (e: PointerEvent) => {
+      if (markGrab && e.pointerId === markGrab.pointerId) {
+        e.stopPropagation();
+        finishMark(e.type === 'pointerup');
+        setCursor('');
+        return;
+      }
       if (!grab || e.pointerId !== grab.pointerId) return;
       e.stopPropagation();
       finish(e.type === 'pointerup');
@@ -240,20 +320,22 @@ export function MapView() {
     };
     // What MapLibre itself listens to, kept from it while the title is held.
     const swallow = (e: Event) => {
-      if (grab) e.stopPropagation();
+      if (grab || markGrab) e.stopPropagation();
     };
     const onDoubleClick = (e: MouseEvent) => {
-      // Not a zoom on the title.
-      if (onCanvas(e) && gripAt(e)) e.stopPropagation();
+      // Not a zoom on the title or a mark.
+      if (onCanvas(e) && (markUnder(e) || gripAt(e))) e.stopPropagation();
     };
     const onLeave = () => {
-      if (grab) return;
+      if (grab || markGrab) return;
       setTitleHover(false);
+      setMarkHover(null);
       setCursor('');
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (grab) finish(false);
+      if (markGrab) finishMark(false);
+      else if (grab) finish(false);
       else setTitleSelected(false);
     };
     const swallowed = ['mousedown', 'mousemove', 'mouseup', 'touchstart', 'touchmove', 'touchend', 'touchcancel'] as const;
@@ -408,7 +490,9 @@ export function MapView() {
 
   const hint = titleSelected
     ? `Drag the title or its handles. ${COARSE ? 'Tap' : 'Click'} the map to let go.`
-    : scaleLocked
+    : markHover || markDragged
+      ? 'Drag it to put it somewhere else. Resize and turn it in the preview.'
+      : scaleLocked
       ? LOCKED_HINT
       : HINT;
   return (
@@ -423,6 +507,9 @@ export function MapView() {
           artwork={artwork}
           outline={artwork && (titleSelected || titleHover) && canDrag(shownLabel.style) ? (titleSelected ? 'selected' : 'hover') : null}
           handles={handles}
+          marks={placedMarks}
+          selectedMark={selectedMark}
+          markHover={markHover}
         />
       ) : null}
       <div className="map-footer">
@@ -452,8 +539,11 @@ function Overlay(props: {
   artwork: LabelArtwork | null;
   outline: 'hover' | 'selected' | null;
   handles: HandleSpot[];
+  marks: PlacedMark[];
+  selectedMark: string | null;
+  markHover: string | null;
 }) {
-  const { layout, frame, width, height, artwork, outline, handles } = props;
+  const { layout, frame, width, height, artwork, outline, handles, marks } = props;
   const handle = HANDLE_SIZE / frame.scale;
   const s = frame.scale;
   const outside = `M${-frame.ox / s},${-frame.oy / s}h${width / s}v${height / s}h${-width / s}Z`;
@@ -474,6 +564,12 @@ function Overlay(props: {
         </g>
         <path d={shapePathD(layout.canvas)} fill="none" stroke="rgba(0,0,0,0.55)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         {artwork ? <TitleOverlay artwork={artwork} windowD={shapePathD(layout.window)} /> : null}
+        {marks.length ? (
+          <>
+            <MarkDrawing items={marks} inkOf={() => INK} paper={PAPER} windowD={shapePathD(layout.window)} clipId="map-mark-window" lineWidth={1 / s} />
+            <MarkFrames items={marks} selected={props.selectedMark} hover={props.markHover} editing={false} handles={[]} unit={1 / s} />
+          </>
+        ) : null}
         {artwork && outline ? (
           <rect
             className={outline === 'selected' ? 'title-frame' : 'title-grab'}

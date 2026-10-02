@@ -1,13 +1,20 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
+import { shapePathD } from '../../engine/layout/shapes.ts';
+import { type MapMark, markPlacedAt, markPoint, wrapDegrees } from '../../engine/marks/marks.ts';
+import { MARK_SHAPES } from '../../engine/marks/shapes.ts';
 import type { RenderResult } from '../../engine/result.ts';
 import type { LabelSettings } from '../../engine/text/label.ts';
 import { Select } from '../components/controls.tsx';
 import { type TitleDrag, type TitleGrip, canDrag, dragTitle, droppedLabel, handleAt, resizeCursor, spacedHandles, titleAt, titleHandles } from '../labelDrag.ts';
 import { useLabelArtwork } from '../map/useLabelArtwork.ts';
+import { useMarkArtworks } from '../map/useMarkArtwork.ts';
+import { MARK_REACH_PX, type MarkDrag, type MarkGrip, type PlacedMark, cornerCursor, dragMark, markAt, handleAt as markHandleAt, markHandles, scaleMark } from '../markDrag.ts';
+import { addMark, duplicateMark, markTransform, nudgeMark, removeMark, selectMark, setEditing, setTool, startingMark, updateMark, useMarkUi } from '../marks.ts';
 import { useRender } from '../render.ts';
 import { type PreviewLook, useApp } from '../store.ts';
-import { MATERIALS, type MaterialId, groupPaint, previewBackground } from './paint.ts';
+import { MarkCard, MarkDrawing, MarkFrames, MarkPalette, TOOL_KEYS } from './MarkTools.tsx';
+import { MATERIALS, type MaterialId, groupPaint, previewBackground, previewMarkInk } from './paint.ts';
 import { PickIndex, PickOverlay, RoadRouteCard } from './RoutePicker.tsx';
 import { TitleCard, TitleFrame, TitleGhost } from './TitleTools.tsx';
 
@@ -31,14 +38,16 @@ const DRAG_START_PX = 4;
 
 const isTitle = (element: string) => element === 'text' || element === 'frame';
 
-// hideTitle leaves the title out while a moved one is drawn over the result.
-const PreviewContent = memo(function PreviewContent(props: { result: RenderResult; look: PreviewLook; hideTitle: boolean }) {
-  const { result, look, hideTitle } = props;
+// hideTitle leaves the title out while a moved one is drawn over the result,
+// and hideMarks the pins and text while they're drawn from the settings.
+const PreviewContent = memo(function PreviewContent(props: { result: RenderResult; look: PreviewLook; hideTitle: boolean; hideMarks: boolean }) {
+  const { result, look, hideTitle, hideMarks } = props;
   return (
     <g>
       <path d={result.outline} fill={previewBackground(result, look)} />
       {result.groups.map((group) => {
         if (hideTitle && isTitle(group.element)) return null;
+        if (hideMarks && group.element === 'mark') return null;
         const paint = groupPaint(group, result, look);
         return (
           <g key={group.id} {...paint} strokeLinecap="round" strokeLinejoin="round">
@@ -122,6 +131,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   const title = useLabelArtwork(Boolean(result) && draggable, layout, shown, customFontId, mapInfo);
   const titleGrab = useRef<{ pointerId: number; start: Point; moved: boolean; drag: TitleDrag; to: LabelSettings | null; cursor: string } | null>(null);
   const [titleSelected, setTitleSelected] = useState(false);
+  const [hoverTitle, setHoverTitle] = useState(false);
   const [hoverCursor, setHoverCursor] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   useEffect(() => {
@@ -129,6 +139,33 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   }, [props.upToDate, result, placing]);
   const ghost = (dragged !== null || placing) && title.artwork !== null && layout !== null;
   const unit = box && size.w > 0 ? box.w / size.w : 1;
+
+  // Pins and text. Like the title, they're laid out here to be dragged. While
+  // the result is behind the settings they're drawn from the settings, so a
+  // change shows straight away.
+  const marks = useApp((s) => s.marks);
+  const area = useApp((s) => s.area);
+  const styles = useApp((s) => s.styles);
+  const { editing, tool, selected: selectedMarkId, fresh } = useMarkUi();
+  const liveMarks = useMarkArtworks(marks, label.font, customFontId);
+  const [markDragged, setMarkDragged] = useState<MapMark | null>(null);
+  const [hoverMark, setHoverMark] = useState<string | null>(null);
+  const markGrab = useRef<{ pointerId: number; start: Point; moved: boolean; drag: MarkDrag; to: MapMark | null; cursor: string } | null>(null);
+  const transform = useMemo(() => (layout ? markTransform(area, layout) : null), [area, layout]);
+  const placedMarks: PlacedMark[] = useMemo(() => {
+    if (!layout || !transform) return [];
+    return marks.map((m) => {
+      const mark = markDragged?.id === m.id ? markDragged : m;
+      return { mark, art: liveMarks.layoutWith(mark), at: markPoint(mark, transform, layout.window) };
+    });
+  }, [marks, markDragged, liveMarks, transform, layout]);
+  const selectedMark = marks.find((m) => m.id === selectedMarkId) ?? null;
+  const selectedPlaced = placedMarks.find((p) => p.mark.id === selectedMarkId) ?? null;
+  const markSpots = useMemo(() => (selectedPlaced && !picking ? markHandles(selectedPlaced, unit) : []), [selectedPlaced, picking, unit]);
+  const ghostMarks = marks.length > 0 && (!props.upToDate || markDragged !== null);
+  useEffect(() => {
+    if (selectedMarkId && !marks.some((m) => m.id === selectedMarkId)) selectMark(null);
+  }, [marks, selectedMarkId]);
   const handles = useMemo(() => {
     if (!titleSelected || picking || !title.artwork || !layout) return [];
     return spacedHandles(titleHandles(layout, shown, title.artwork), (x, y) => [x / unit, y / unit], HANDLE_GAP);
@@ -234,6 +271,27 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     if (handle) return handle;
     return titleAt(shown, title.artwork, at.x, at.y) ? 'move' : null;
   };
+  // A handle of the selected mark, or a mark, under a stage point. Empty
+  // text can only be found while editing, where its outline shows.
+  const markGripAt = (point: Point): { id: string; grip: MarkGrip } | null => {
+    const at = pieceAt(point);
+    if (!at || picking || tool) return null;
+    if (selectedPlaced) {
+      const handle = markHandleAt(markSpots, [at.x, at.y], HANDLE_REACH * at.k);
+      if (handle) return { id: selectedPlaced.mark.id, grip: handle };
+    }
+    const id = markAt(
+      placedMarks.filter((p) => editing || !p.art.empty),
+      [at.x, at.y],
+      MARK_REACH_PX * at.k,
+    );
+    return id ? { id, grip: 'move' } : null;
+  };
+  const markCursor = (grip: MarkGrip, id: string) => (grip === 'move' ? 'move' : cornerCursor(grip, placedMarks.find((p) => p.mark.id === id)?.art.rotation ?? 0));
+  const cancelMarkDrag = () => {
+    markGrab.current = null;
+    setMarkDragged(null);
+  };
   const cursorFor = (grip: TitleGrip) => {
     const spot = handles.find((h) => h.id === grip);
     return spot ? resizeCursor(spot.dx, spot.dy) : 'move';
@@ -253,20 +311,45 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     const point = stagePoint(e);
     pointers.current.set(e.pointerId, point);
     pressed.current = pointers.current.size === 1 ? { point, moved: false } : null;
-    if (titleGrab.current) {
-      // A second finger puts the title back and pinches instead.
+    if (titleGrab.current || markGrab.current) {
+      // A second finger puts the title or mark back and pinches instead.
       cancelTitleDrag();
-    } else if (pointers.current.size === 1 && !picking && e.button === 0 && title.artwork) {
-      const grip = gripAt(point);
-      if (grip) {
+      cancelMarkDrag();
+    } else if (pointers.current.size === 1 && !picking && e.button === 0) {
+      // Marks are drawn over the title, so they come first.
+      const markGrip = markGripAt(point);
+      const from = markGrip && placedMarks.find((p) => p.mark.id === markGrip.id);
+      const at = pieceAt(point);
+      if (markGrip && from && at) {
+        markGrab.current = { pointerId: e.pointerId, start: point, moved: false, drag: { grip: markGrip.grip, start: [at.x, at.y], from }, to: null, cursor: markCursor(markGrip.grip, markGrip.id) };
+        selectMark(markGrip.id);
+        setTitleSelected(false);
+        return;
+      }
+      const grip = title.artwork && !tool ? gripAt(point) : null;
+      if (grip && title.artwork) {
         titleGrab.current = { pointerId: e.pointerId, start: point, moved: false, drag: { grip, label, artwork: title.artwork }, to: null, cursor: cursorFor(grip) };
         setTitleSelected(true);
+        selectMark(null);
         return;
       }
     }
     restart();
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    const held = markGrab.current;
+    if (held && held.pointerId === e.pointerId) {
+      const point = stagePoint(e);
+      pointers.current.set(e.pointerId, point);
+      if (!held.moved && Math.hypot(point[0] - held.start[0], point[1] - held.start[1]) < DRAG_START_PX) return;
+      held.moved = true;
+      const at = pieceAt(point);
+      if (!at || !layout || !transform) return;
+      const { at: spot, patch } = dragMark(held.drag, [at.x, at.y], e.shiftKey);
+      held.to = { ...held.drag.from.mark, ...patch, ...(spot ? markPlacedAt(spot, transform, layout.window) : {}) };
+      setMarkDragged(held.to);
+      return;
+    }
     const grab = titleGrab.current;
     if (grab && grab.pointerId === e.pointerId) {
       const point = stagePoint(e);
@@ -281,8 +364,11 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
       return;
     }
     if (!picking && !pointers.current.size) {
-      const grip = gripAt(stagePoint(e));
-      setHoverCursor(grip ? cursorFor(grip) : null);
+      const markGrip = markGripAt(stagePoint(e));
+      const grip = markGrip || tool ? null : gripAt(stagePoint(e));
+      setHoverMark(markGrip?.id ?? null);
+      setHoverTitle(grip !== null);
+      setHoverCursor(markGrip ? markCursor(markGrip.grip, markGrip.id) : grip ? cursorFor(grip) : null);
     }
     if (picking && index && !pointers.current.size) {
       const at = pieceAt(stagePoint(e));
@@ -303,6 +389,18 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   };
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
+    const held = markGrab.current;
+    if (held && held.pointerId === e.pointerId) {
+      markGrab.current = null;
+      pressed.current = null;
+      if (held.moved && held.to && e.type !== 'pointercancel') {
+        const { id, ...patch } = held.to;
+        updateMark(id, patch);
+      }
+      setMarkDragged(null);
+      restart();
+      return;
+    }
     const grab = titleGrab.current;
     if (grab && grab.pointerId === e.pointerId) {
       titleGrab.current = null;
@@ -319,8 +417,18 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     restart();
     const press = pressed.current;
     pressed.current = null;
-    // A click off the title lets go of it.
-    if (!picking && press && !press.moved && e.type !== 'pointercancel') setTitleSelected(false);
+    // A click with a tool puts down a mark. Otherwise a click off the title
+    // or a mark lets go of it.
+    if (!picking && press && !press.moved && e.type !== 'pointercancel') {
+      const at = pieceAt(press.point);
+      if (tool && at) {
+        addMark(startingMark(tool), [at.x, at.y], tool === 'none');
+        setTool(null);
+      } else {
+        setTitleSelected(false);
+        selectMark(null);
+      }
+    }
     if (!picking || !index || !press || press.moved || e.type === 'pointercancel') return;
     const at = pieceAt(press.point);
     if (!at) return;
@@ -330,7 +438,43 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     if (line < 0) return;
     setSelected((current) => (current.includes(line) ? current.filter((l) => l !== line) : [...current, line]));
   };
+  const onMarkKey = (e: React.KeyboardEvent): boolean => {
+    const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (markGrab.current) {
+      if (e.key === 'Escape') cancelMarkDrag();
+      return e.key === 'Escape';
+    }
+    if (selectedMark) {
+      const step = e.shiftKey ? 5 : 0.5;
+      const nudge: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+      const key = e.key.toLowerCase();
+      if (plain && nudge[e.key]) nudgeMark(selectedMark.id, ...nudge[e.key]);
+      else if (plain && (e.key === 'Delete' || e.key === 'Backspace')) removeMark(selectedMark.id);
+      else if ((e.ctrlKey || e.metaKey) && !e.altKey && key === 'd') duplicateMark(selectedMark.id);
+      else if (plain && key === 'r') updateMark(selectedMark.id, { rotation: wrapDegrees(selectedMark.rotation + (e.shiftKey ? -15 : 15)) });
+      else if (plain && (e.key === ']' || e.key === '[')) updateMark(selectedMark.id, scaleMark(selectedMark, e.key === ']' ? 1.1 : 1 / 1.1));
+      else if (e.key === 'Escape') selectMark(null);
+      else return false;
+      return true;
+    }
+    if (!editing || !plain) return false;
+    if (e.key === 'Escape') {
+      if (tool) setTool(null);
+      else setEditing(false);
+      return true;
+    }
+    const key = e.key.toLowerCase();
+    if (key in TOOL_KEYS) {
+      setTool(TOOL_KEYS[key]);
+      return true;
+    }
+    return false;
+  };
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (onMarkKey(e)) {
+      e.preventDefault();
+      return;
+    }
     if ((titleGrab.current || titleSelected) && e.key === 'Escape') {
       if (titleGrab.current) cancelTitleDrag();
       else setTitleSelected(false);
@@ -375,38 +519,60 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   const km = (m: number) => (m / 1000).toFixed(2);
   const plotter = result.stats.plotter;
   const canGrab = draggable && title.artwork !== null;
-  const hint = picking
-    ? COARSE
-      ? 'Tap roads to pick them, tap again to drop one'
-      : 'Click roads to pick them, click again to drop one, Esc clears'
-    : titleSelected
-      ? `Drag the handles to resize the title. ${COARSE ? 'Tap' : 'Click'} the map to let go.`
-      : canGrab
-        ? `${COARSE ? 'Tap' : 'Click'} the title to move or resize it`
-        : null;
-  const card = picking || (titleSelected && title.artwork !== null);
+  const tap = COARSE ? 'Tap' : 'Click';
+  let hint: string | null = null;
+  if (picking) hint = COARSE ? 'Tap roads to pick them, tap again to drop one' : 'Click roads to pick them, click again to drop one, Esc clears';
+  else if (tool) hint = `${tap} the map to put down ${tool === 'none' ? 'text' : `a ${MARK_SHAPES[tool].name.toLowerCase()}`}. Esc to stop.`;
+  else if (selectedMark) hint = 'Drag to move, corners to resize, the round handle to turn';
+  else if (titleSelected) hint = `Drag the handles to resize the title. ${tap} the map to let go.`;
+  else if (editing) hint = `Pick a tool, or ${tap.toLowerCase()} a pin or text to change it`;
+  else if (canGrab) hint = `${tap} the title to move or resize it`;
+  const markCard = !picking && (editing || selectedMark !== null);
+  const card = picking || markCard || (titleSelected && title.artwork !== null);
+  const titleInk = styles[result.mode].colors.text;
   return (
     <div className={card ? 'preview-stage has-card' : 'preview-stage'} ref={ref}>
       <div
         className={dragging ? 'preview dragging' : 'preview'}
-        style={{ cursor: titleGrab.current?.cursor ?? (picking ? 'crosshair' : (hoverCursor ?? undefined)) }}
+        style={{ cursor: titleGrab.current?.cursor ?? markGrab.current?.cursor ?? (picking || tool ? 'crosshair' : (hoverCursor ?? undefined)) }}
         role="img"
         tabIndex={0}
-        aria-label={`Preview of the SVG map, ${result.width.toFixed(1)} by ${result.height.toFixed(1)} mm. Arrow keys move it, plus and minus zoom, 0 fits it.`}
+        aria-label={
+          selectedMark
+            ? `Preview of the SVG map with ${selectedMark.text.trim() ? `“${selectedMark.text.trim()}”` : MARK_SHAPES[selectedMark.shape].name.toLowerCase()} selected. Arrow keys move it, R turns it, square brackets resize it, Delete removes it, Escape lets go.`
+            : `Preview of the SVG map, ${result.width.toFixed(1)} by ${result.height.toFixed(1)} mm. Arrow keys move it, plus and minus zoom, 0 fits it.`
+        }
         onKeyDown={onKeyDown}
         onWheel={(e) => zoomAt(...stagePoint(e), Math.exp(e.deltaY * 0.0015))}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onPointerLeave={() => setHoverCursor(null)}
+        onPointerLeave={() => {
+          setHoverCursor(null);
+          setHoverTitle(false);
+          setHoverMark(null);
+        }}
         onDoubleClick={fit}
       >
         {box ? (
           <svg viewBox={`${box.x} ${box.y} ${box.w} ${h}`} preserveAspectRatio="xMidYMid meet">
-            <PreviewContent result={result} look={look} hideTitle={ghost} />
+            <PreviewContent result={result} look={look} hideTitle={ghost} hideMarks={ghostMarks} />
             {ghost && title.artwork && layout ? <TitleGhost artwork={title.artwork} result={result} look={look} layout={layout} /> : null}
-            {!picking && title.artwork && canGrab && (titleSelected || hoverCursor) ? (
+            {ghostMarks && layout ? (
+              <MarkDrawing
+                items={placedMarks}
+                inkOf={(mark) => previewMarkInk(result, look, mark.color || titleInk)}
+                paper={previewBackground(result, look)}
+                windowD={shapePathD(layout.window)}
+                clipId="preview-mark-window"
+                fresh={fresh}
+              />
+            ) : null}
+            {!picking && (editing || selectedPlaced || hoverMark) ? (
+              <MarkFrames items={placedMarks} selected={selectedMarkId} hover={hoverMark} editing={editing} handles={markSpots} unit={unit} />
+            ) : null}
+            {!picking && title.artwork && canGrab && (titleSelected || hoverTitle) ? (
               <TitleFrame artwork={title.artwork} label={shown} handles={handles} selected={titleSelected} unit={unit} />
             ) : null}
             {picking && index ? <PickOverlay index={index} selected={selected} hover={hoverLine} unit={unit} routes={roadRoutes} /> : null}
@@ -424,9 +590,25 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
             setPicking(!picking);
             setSelected([]);
             setTitleSelected(false);
+            setEditing(false);
+            selectMark(null);
           }}
         >
           Pick roads
+        </button>
+        <button
+          type="button"
+          className={editing ? 'btn btn-small pick-toggle active' : 'btn btn-small pick-toggle'}
+          aria-pressed={editing}
+          title={editing ? 'Stop editing pins and text' : 'Add pins, shapes and text, and move them around'}
+          onClick={() => {
+            setEditing(!editing);
+            if (editing) selectMark(null);
+            setPicking(false);
+            setTitleSelected(false);
+          }}
+        >
+          Pins &amp; text
         </button>
         {result.mode === 'laser' ? (
           <Select<PreviewLook>
@@ -452,8 +634,11 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
           </button>
         </div>
       </div>
+      {editing && !picking ? <MarkPalette tool={tool} onTool={setTool} onAdd={(shape) => addMark(startingMark(shape), undefined, shape === 'none')} /> : null}
       {picking ? (
         <RoadRouteCard index={index} selected={selected} onSelect={setSelected} onClose={() => setPicking(false)} />
+      ) : markCard ? (
+        <MarkCard marks={marks} selected={selectedMark} editing={editing} onClose={() => (selectedMark ? selectMark(null) : setEditing(false))} />
       ) : titleSelected && title.artwork ? (
         <TitleCard label={label} onChange={setLabel} onClose={() => setTitleSelected(false)} />
       ) : null}

@@ -10,6 +10,7 @@ import { CleanupPanel } from './panels/CleanupPanel.tsx';
 import { DataPanel } from './panels/DataPanel.tsx';
 import { LayersPanel } from './panels/LayersPanel.tsx';
 import { LocationPanel } from './panels/LocationPanel.tsx';
+import { MarksPanel } from './panels/MarksPanel.tsx';
 import { OutputPanel } from './panels/OutputPanel.tsx';
 import { RoutesPanel } from './panels/RoutesPanel.tsx';
 import { SizePanel } from './panels/SizePanel.tsx';
@@ -58,6 +59,8 @@ function dropMissingFont() {
   quietly(() => {
     if (app.label.font === CUSTOM_FONT_ID) app.setLabel({ font: DEFAULT_LABEL.font });
     if (useApp.getState().label.subtitleFont === CUSTOM_FONT_ID) app.setLabel({ subtitleFont: '' });
+    const marks = useApp.getState().marks;
+    if (marks.some((m) => m.font === CUSTOM_FONT_ID)) app.set({ marks: marks.map((m) => (m.font === CUSTOM_FONT_ID ? { ...m, font: '' } : m)) });
   });
 }
 
@@ -89,7 +92,7 @@ async function copyShareLink() {
 }
 
 function resetSettings() {
-  if (confirm('Reset all settings to the defaults? The location, title, routes and picked roads are kept.')) asChange('Reset settings', () => useApp.getState().reset());
+  if (confirm('Reset all settings to the defaults? The location, title, routes, picked roads, pins and text are kept.')) asChange('Reset settings', () => useApp.getState().reset());
 }
 
 const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
@@ -133,6 +136,7 @@ const Sidebar = memo(function Sidebar() {
       <OutputPanel />
       <LayersPanel />
       <TitlePanel />
+      <MarksPanel />
       <CleanupPanel />
       <DataPanel />
       <div className="sidebar-footer">

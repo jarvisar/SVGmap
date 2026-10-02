@@ -1,4 +1,4 @@
-import type { OutputGroup, RenderResult } from '../../engine/result.ts';
+import type { GroupElement, OutputGroup, RenderResult } from '../../engine/result.ts';
 import type { ElementId } from '../../engine/settings.ts';
 import type { PreviewLook } from '../store.ts';
 
@@ -16,7 +16,7 @@ export type MaterialId = keyof typeof MATERIALS;
 const material = (result: RenderResult, look: PreviewLook) => (result.mode === 'laser' && look !== 'colors' ? (MATERIALS[look] ?? MATERIALS.birch) : null);
 
 // Rough strength of each fill in the material preview, since each gets its own process.
-const BURN_OPACITY: Partial<Record<ElementId, number>> = {
+const BURN_OPACITY: Partial<Record<GroupElement, number>> = {
   buildings: 0.92,
   text: 0.95,
   band: 0.95,
@@ -27,6 +27,7 @@ const BURN_OPACITY: Partial<Record<ElementId, number>> = {
   sand: 0.25,
   decks: 0.3,
   route: 0.95,
+  mark: 0.95,
 };
 
 export interface Paint {
@@ -46,6 +47,11 @@ export function previewInk(result: RenderResult, look: PreviewLook, element: Ele
   const m = material(result, look);
   if (m) return m.mark;
   return result.groups.find((g) => g.element === element)?.color ?? '#222222';
+}
+
+// A mark's colour as the preview draws it.
+export function previewMarkInk(result: RenderResult, look: PreviewLook, color: string) {
+  return material(result, look)?.mark ?? color;
 }
 
 export function groupPaint(group: OutputGroup, result: RenderResult, look: PreviewLook): Paint {

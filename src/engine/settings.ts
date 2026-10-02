@@ -3,6 +3,7 @@
 import type { AreaSpec } from './geo/transform.ts';
 import { DEFAULT_BORDER, type BorderSettings, type ProductSettings } from './layout/layout.ts';
 import { DEFAULT_CLEANUP, type CleanupSettings } from './lines/cleanup.ts';
+import type { MapMark } from './marks/marks.ts';
 import type { HatchSettings } from './plotter.ts';
 import type { LonLatLine, RoadRoute } from './routes/picks.ts';
 import { DEFAULT_LABEL, type LabelSettings } from './text/label.ts';
@@ -33,6 +34,9 @@ export const LAYER_NAMES: Record<LayerId, string> = {
 
 export type FillMode = 'fill' | 'outline' | 'hatch' | 'hatch-outline';
 
+// Pins and text share one hatch, set per mode like the layers'.
+export type HatchKey = FillLayerId | 'text' | 'route' | 'marks';
+
 export type ElementId = LayerId | 'route' | 'text' | 'frame' | 'border' | 'band' | 'cut';
 
 // 'line' is a single stroke along the route. The rest draw a band, like a filled area.
@@ -42,7 +46,7 @@ export const ROUTE_DRAWS: RouteDraw[] = ['line', 'fill', 'outline', 'hatch', 'ha
 export interface ModeStyle {
   colors: Record<ElementId, string>;
   fillModes: Record<FillLayerId | 'text', FillMode>;
-  hatch: Record<FillLayerId | 'text' | 'route', HatchSettings>;
+  hatch: Record<HatchKey, HatchSettings>;
   routeDraw: RouteDraw;
   // Only used by print. Lasers get a hairline and plotters the pen width.
   lineWidths: Record<LineLayerId, number>;
@@ -126,6 +130,8 @@ export interface RenderSettings {
   roadRoutes: RoadRoute[];
   // Roads picked to be left out.
   hiddenLines: LonLatLine[];
+  // Pins, shapes and text put on the map.
+  marks: MapMark[];
   // SVG title.
   title: string;
 }
@@ -264,7 +270,7 @@ const lineWidths = (w: number): Record<LineLayerId, number> => ({
   raceways: w,
 });
 
-export const DEFAULT_HATCH: Record<FillLayerId | 'text' | 'route', HatchSettings> = {
+export const DEFAULT_HATCH: Record<HatchKey, HatchSettings> = {
   water: hatch(0.8, 0),
   greens: hatch(1.4, 45),
   sand: hatch(1.6, 30),
@@ -274,6 +280,7 @@ export const DEFAULT_HATCH: Record<FillLayerId | 'text' | 'route', HatchSettings
   buildings: hatch(0.7, 45),
   text: hatch(0.3, 45),
   route: hatch(0.3, 45),
+  marks: hatch(0.3, 45),
 };
 
 // A laser line needs about one kerf. A pen stroke needs its own width plus a gap.

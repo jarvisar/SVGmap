@@ -11,7 +11,7 @@ let loader: Promise<FontLoader> | null = null;
 // opentype.js is loaded on demand so it isn't part of the first page load.
 // Same idle limit as the render worker's fonts: a font that never finishes
 // would otherwise hold the title overlay, and every later load of it.
-function fontLoader(): Promise<FontLoader> {
+export function fontLoader(): Promise<FontLoader> {
   loader ??= import('../../engine/text/loadFont.ts').then(
     ({ FontLoader }) =>
       new FontLoader(async (path) => {

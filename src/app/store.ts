@@ -76,7 +76,7 @@ interface Actions {
   addRoutes: (items: RouteData[]) => void;
   updateRoute: (id: string, patch: Partial<Omit<RouteData, 'id'>>) => void;
   removeRoute: (id: string) => void;
-  // Everything except the place, the title and subtitle text, the routes and the picked roads.
+  // Everything except the place, the title and subtitle text, the routes, the picked roads and the marks.
   reset: () => void;
 }
 
@@ -222,6 +222,7 @@ export const useApp = create<AppState>()(
             routes: { ...defaults.routes, items: s.routes.items },
             roadRoutes: s.roadRoutes,
             hiddenLines: s.hiddenLines,
+            marks: s.marks,
             ...keepScale(s, defaults.product, defaults.border),
           };
         }),
@@ -264,4 +265,5 @@ export const selectSettings = (s: AppState): Settings => ({
   laser: s.laser,
   roadRoutes: s.roadRoutes,
   hiddenLines: s.hiddenLines,
+  marks: s.marks,
 });

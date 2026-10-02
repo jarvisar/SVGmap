@@ -42,6 +42,7 @@ export function defaultRenderSettings(mode: OutputMode = 'laser'): RenderSetting
     laser: DEFAULTS.laser,
     roadRoutes: [],
     hiddenLines: [],
+    marks: [],
     title: place.name,
   });
 }

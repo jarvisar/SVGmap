@@ -10,9 +10,12 @@ export interface OutputPath {
   cls?: string;
 }
 
+// Marks have no colour of their own in the style, each brings its own.
+export type GroupElement = ElementId | 'mark';
+
 export interface OutputGroup {
   id: string;
-  element: ElementId;
+  element: GroupElement;
   label: string;
   kind: 'fill' | 'stroke';
   color: string;

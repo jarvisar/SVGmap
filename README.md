@@ -18,7 +18,7 @@ Click the title on the map or in the preview to move it or resize it. See Title 
 
 Use `Ctrl+Z` to undo a change and `Ctrl+Y` or `Ctrl+Shift+Z` to redo it (`Cmd` on a Mac), or the arrows in the top bar. On a phone, the arrows and `Share link` are at the top of `Settings`. A drag, a pulled slider or typing in one field undoes as one step. Typing in a field keeps its own undo until you click away from it.
 
-Settings are saved in the browser. `Reset settings` at the bottom of the sidebar puts everything back to the defaults except the location, title, routes and picked roads.
+Settings are saved in the browser. `Reset settings` at the bottom of the sidebar puts everything back to the defaults except the location, title, routes, picked roads, pins and text.
 
 The settings are:
 
@@ -28,6 +28,7 @@ The settings are:
 * Output switches between laser, plotter and print.
 * Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline or hatching). The footpath options can skip sidewalks and crossings. See below.
 * Title adds a title and subtitle in one of seven styles. See below. You can load your own font file and set the colour of the lettering and of its lines.
+* Pins & text puts your own pins, shapes and text on the map. See below.
 * Line cleanup removes doubled and crowded lines. See below.
 * Map data sets where the map tiles come from, and can add buildings OpenStreetMap is missing. See below.
 
@@ -62,6 +63,14 @@ A title too big for the piece shrinks until it fits. On a round or hexagonal pie
 Click the box, band, ribbon, badge or legend on the map or in the preview to select it, then drag it anywhere inside the border. Its corners resize it. A box's sides set its width or height, and `Autofit text` grows or shrinks the text to fill it. On a band, the text moves within the band, its corners resize it and the handle on the divider sets the band height. `Autofit text` fills the band. `Reset the position` and `Fit the box to the text` under Title undo a drag or a resize. Picking a new position does too. Big letters and the in-border title stay where their own settings put them.
 
 The box, ribbon and badge can be made solid, which engraves the shape and leaves the letters bare. The presets under Title set the style, fonts and options in one click and keep your title text. Those that use coordinates fill them in when the subtitle is empty.
+
+## Pins & Text
+
+Put your own marks on the map: a pin on home, a heart where you met, a flag at the finish or a line of text. There are 12 shapes (pin, dot, target, heart, star, sparkle, house, flag, cross, arrow, mountain and tree), and each can have up to four lines of text beside it, above it, below it or cut out of it, like a number in a dot.
+
+Click `Pins & text` above the preview to start. Pick a shape or text from the tools on the left, then click the map to put it down. Drag a mark to move it, a corner to resize it and the round handle to turn it. Hold Shift to keep a move to one direction or turn in 15° steps. With a mark selected, the arrow keys nudge it (Shift for 5 mm), `R` turns it, `[` and `]` resize it, `Delete` removes it and `Ctrl+D` makes a copy. In edit mode `T`, `P`, `H` and `S` pick the text, pin, heart and star tools, and `Esc` backs out one step at a time. Everything can also be done under Pins & text in the sidebar, and marks can be dragged on the map view too.
+
+A mark stays on its spot when the map moves or zooms, or it can be set to stay where it is on the piece instead. Its font and colour follow the title's unless you pick others. The map is left out under it, with a gap around it, like the title. In the file each mark is a layer of its own in its own colour, so it can get its own laser process or pen.
 
 ## Line Cleanup
 
@@ -149,6 +158,8 @@ Run the tests with `npm test`. The live render test is skipped unless `SVGMAP_NE
 * Routes make share links longer. One from a route planner adds well under 1 KB, but a recorded marathon can add up to about 40 KB.
 * Picked roads are matched by position, within about 4 m. A road that runs right next to another of the same kind can be picked up with it, and a road the tiles draw very differently at another scale can stop matching. One map can keep about 50,000 points of picked roads.
 * Picked roads make share links longer, by about 40 bytes for each line picked.
+* Pins and text are cut off at the edge of the map, so they can't go in the border or the margin. One map can have up to 60.
+* On the map view, pins and text can only be moved. Resize and turn them in the preview or the sidebar.
 * Undo starts over when the page is reloaded and keeps the last 100 changes.
 * Custom fonts can be TTF, OTF or WOFF. WOFF2 files don't load. A font whose ligatures or Arabic joining opentype.js can't read, like Calibri, is drawn a letter at a time, with a warning. Letters the font doesn't have are drawn as boxes, or left out, and listed in a warning.
 * The material preview is only a rough idea of how the fills will look. Test your settings on scrap.

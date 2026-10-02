@@ -16,6 +16,7 @@ import {
   unionAll,
 } from './fills.ts';
 import type { Layout } from './layout/layout.ts';
+import { drawMarks, makeMarkClearer } from './marks/draw.ts';
 import { bandPathD, distanceToEdge, insetShape, shapePathD, shapePolygon } from './layout/shapes.ts';
 import { cleanupLines } from './lines/cleanup.ts';
 import { lineCoverage } from './lines/coverage.ts';
@@ -23,7 +24,7 @@ import { type LineItem, type Path, pathLength } from './lines/geometry.ts';
 import { weldPaths } from './lines/weld.ts';
 import { contourFill, hatchWith, orderForPlotting, outlines } from './plotter.ts';
 import type { Prepared, PreparedLine, PreparedPolygon } from './prepare.ts';
-import type { OutputGroup, OutputPath, PlotterStats, RenderResult } from './result.ts';
+import type { GroupElement, OutputGroup, OutputPath, PlotterStats, RenderResult } from './result.ts';
 import { buildRoutes, makeRouteClearer } from './routes/draw.ts';
 import { type LonLatLine, pickLines, pickedLines, roadRouteGroupId } from './routes/picks.ts';
 import {
@@ -31,6 +32,7 @@ import {
   FILL_LAYERS,
   type FillLayerId,
   type FillMode,
+  type HatchKey,
   LAYER_NAMES,
   LINE_LAYERS,
   type LineLayerId,
@@ -46,6 +48,8 @@ import { FLAG, acceptLine, acceptPolygon } from './tiles/schema.ts';
 export interface ComposeFonts {
   title: LoadedFont | null;
   subtitle: LoadedFont | null;
+  // The marks' fonts by id.
+  marks?: ReadonlyMap<string, LoadedFont>;
 }
 
 interface LineKey {
@@ -56,11 +60,11 @@ interface LineKey {
 // A group before it becomes path data, so the plotter can still reorder it.
 interface Draft {
   id: string;
-  element: ElementId;
+  element: GroupElement;
   label: string;
   kind: 'fill' | 'stroke';
   strokeWidth: number;
-  // A road route's own colour, instead of its element's.
+  // A road route's or a mark's own colour, instead of its element's.
   color?: string;
   fill?: Paths64;
   // Split by class when print mode gives each road class its own width.
@@ -147,6 +151,12 @@ export function compose(
   const knockout = title.area;
   lap('label');
 
+  // Pins and text. They're drawn over everything else in the window, title included.
+  const marks = drawMarks(s.marks ?? [], fonts.marks ?? new Map(), s.label.font, style.colors.text, prepared.transform, window, titleStroke);
+  warnings.push(...marks.warnings);
+  const clearMarks = makeMarkClearer(marks.clear);
+  lap('marks');
+
   // Routes
   const routeDraw = ROUTE_DRAWS.includes(style.routeDraw) ? style.routeDraw : 'fill';
   const routeLineWidth = plotter ? pen : s.mode === 'laser' ? hairline : s.routes.width;
@@ -164,8 +174,14 @@ export function compose(
       warnings.push('Part of the route is under the title. Move the title or the map to show all of it.');
     }
   }
-  // What the map leaves empty: the title and the gap around the route.
-  const cutouts = route?.clear.length ? unionAll([...knockout, ...route.clear]) : knockout;
+  // The route gives way to the marks too.
+  if (route && marks.clear.length) {
+    route.lines = clearMarks(route.lines);
+    route.shape = subtract(route.shape, marks.clear);
+  }
+  // What the map leaves empty: the title, the marks and the gap around the route.
+  const cleared = [...(route?.clear ?? []), ...marks.clear];
+  const cutouts = cleared.length ? unionAll([...knockout, ...cleared]) : knockout;
   lap('route');
 
   // Fills
@@ -294,11 +310,11 @@ export function compose(
 
   // Groups
   const drafts: Draft[] = [];
-  const fillDraft = (id: string, element: ElementId, name: string, paths: Paths64, mode: FillMode, hatchKey: FillLayerId | 'text' | 'route') => {
+  const fillDraft = (id: string, element: GroupElement, name: string, paths: Paths64, mode: FillMode, hatchKey: HatchKey, color?: string) => {
     if (paths.length === 0) return;
     const effective: FillMode = plotter && mode === 'fill' ? 'hatch-outline' : mode;
     if (effective === 'fill') {
-      drafts.push({ id, element, label: name, kind: 'fill', strokeWidth: 0, fill: paths });
+      drafts.push({ id, element, label: name, kind: 'fill', strokeWidth: 0, fill: paths, color });
       return;
     }
     // concat, not push(...), since fine hatching of a big area is more lines than a call can take.
@@ -308,7 +324,7 @@ export function compose(
       lines = lines.concat(hatchWith(paths, { ...h, spacing: Math.max(h.spacing, 0.05) }));
     }
     if (effective === 'outline' || effective === 'hatch-outline') lines = lines.concat(outlines(paths));
-    drafts.push({ id, element, label: name, kind: 'stroke', strokeWidth: hairline, lines: [{ paths: lines }] });
+    drafts.push({ id, element, label: name, kind: 'stroke', strokeWidth: hairline, lines: [{ paths: lines }], color });
   };
 
   for (const layer of FILL_LAYERS) {
@@ -343,7 +359,7 @@ export function compose(
         lines: ordered.map(([cls, paths]) => ({
           cls,
           width: width * (ROAD_WIDTH_SCALE[cls] ?? 1),
-          paths: clipLabel(clearRoute(paths)),
+          paths: clearMarks(clipLabel(clearRoute(paths))),
         })),
       });
     } else {
@@ -353,7 +369,7 @@ export function compose(
         label: LAYER_NAMES[layer],
         kind: 'stroke',
         strokeWidth: width,
-        lines: [{ paths: clipLabel(clearRoute(items.map((i) => i.path))) }],
+        lines: [{ paths: clearMarks(clipLabel(clearRoute(items.map((i) => i.path)))) }],
       });
     }
   }
@@ -370,7 +386,7 @@ export function compose(
       kind: 'stroke',
       strokeWidth: plotter ? pen : s.mode === 'laser' ? hairline : Math.min(5, Math.max(0.02, route.width)),
       color: route.color,
-      lines: [{ paths: clipLabel(clearRoute(items.map((i) => i.path))) }],
+      lines: [{ paths: clearMarks(clipLabel(clearRoute(items.map((i) => i.path)))) }],
     });
   });
 
@@ -428,6 +444,14 @@ export function compose(
     }
   }
 
+  for (const piece of marks.pieces) {
+    fillDraft(`mark-${piece.id}`, 'mark', piece.label, piece.area, piece.fill, 'marks', piece.color);
+    if (piece.strokes.length) {
+      const id = piece.area.length ? `mark-${piece.id}-lines` : `mark-${piece.id}`;
+      drafts.push({ id, element: 'mark', label: piece.label, kind: 'stroke', strokeWidth: titleStroke, color: piece.color, lines: [{ paths: piece.strokes }] });
+    }
+  }
+
   // The in-border title breaks the border lines around it.
   const breaks = label?.borderBreaks ?? [];
   const breakLines = (paths: Path[]) => breaks.reduce((out, b) => out.flatMap((p) => clipPolylineOutside(p, b)), paths);
@@ -473,7 +497,7 @@ export function compose(
   lap('style');
 
   // Plotter order
-  const colorOf = (d: Draft) => d.color ?? style.colors[d.element];
+  const colorOf = (d: Draft) => d.color ?? style.colors[d.element as ElementId];
   let plotterStats: PlotterStats | null = null;
   if (plotter) {
     // The file puts every layer of one pen together, so the pen travels in that order.

@@ -5,8 +5,8 @@ import type { Shape } from '../../engine/layout/shapes.ts';
 import { polylineD } from '../../engine/svg/format.ts';
 import type { LabelArtwork } from '../../engine/text/label.ts';
 
-const PAPER = 'rgba(255,255,255,0.88)';
-const INK = 'rgba(0,0,0,0.75)';
+export const PAPER = 'rgba(255,255,255,0.88)';
+export const INK = 'rgba(0,0,0,0.75)';
 
 export const BREAK_MASK = 'title-border-breaks';
 

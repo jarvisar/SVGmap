@@ -43,14 +43,15 @@ const CORNERED: LabelStyle[] = ['box', 'ribbon', 'badge', 'legend'];
 
 const LOAD_FONT = '__load';
 
-function fontOptions(customName: string | null) {
+// loadable adds the entry that opens the file picker, which only the Title panel has.
+export function fontOptions(customName: string | null, loadable = true) {
   const options = FONTS.map((f) => ({
     value: f.id,
     label: `${f.name} (${f.note.toLowerCase()})`,
     group: f.kind === 'outline' ? 'Outline fonts' : 'Single-line fonts',
   }));
   if (customName) options.push({ value: CUSTOM_FONT_ID, label: customName, group: 'Your font' });
-  options.push({ value: LOAD_FONT, label: 'Load a font file…', group: 'Your font' });
+  if (loadable) options.push({ value: LOAD_FONT, label: 'Load a font file…', group: 'Your font' });
   return options;
 }
 

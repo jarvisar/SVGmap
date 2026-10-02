@@ -11,6 +11,7 @@
 // a thick pen gets. settings.test.ts drives the store through every preset
 // to check that.
 
+import { sanitizeMarks } from './marks/marks.ts';
 import type { RenderSettings } from './settings.ts';
 
 export type Limit = { min: number; max: number } | { choices: number[] };
@@ -149,7 +150,8 @@ export function clampRenderSettings(settings: RenderSettings): RenderSettings {
     for (const [key, child] of Object.entries(value)) out[key] = walk(child, [...path, key]);
     return out;
   };
-  // The area is the place itself and is checked where it's planned.
+  // The area is the place itself and is checked where it's planned. Marks
+  // are a list, checked on their own.
   const { area, ...rest } = settings;
-  return { area, ...(walk(rest, []) as Omit<RenderSettings, 'area'>) };
+  return { area, ...(walk(rest, []) as Omit<RenderSettings, 'area'>), marks: sanitizeMarks(settings.marks) };
 }

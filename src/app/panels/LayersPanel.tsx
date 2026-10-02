@@ -3,6 +3,7 @@ import { fieldRange } from '../../engine/limits.ts';
 import {
   type FillLayerId,
   type FillMode,
+  type HatchKey,
   LAYER_NAMES,
   type LayerId,
   type LineLayerId,
@@ -125,7 +126,7 @@ function FilterChecks(props: { layer: LayerId }) {
 }
 
 // Also used for the title lettering and the route band.
-export function HatchOptions(props: { layer: FillLayerId | 'text' | 'route' }) {
+export function HatchOptions(props: { layer: HatchKey }) {
   const style = useApp((s) => s.styles[s.mode]);
   const setStyle = useApp((s) => s.setStyle);
   const h = style.hatch[props.layer];

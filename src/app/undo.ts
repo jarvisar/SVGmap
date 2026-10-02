@@ -7,6 +7,7 @@
 // typing in one field, or the same key pressed on one thing in a row.
 
 import { create } from 'zustand';
+import { describeMarksChange } from '../engine/marks/marks.ts';
 import type { LabelSettings } from '../engine/text/label.ts';
 import { flash } from './flash.ts';
 import type { Settings } from './settings.ts';
@@ -307,6 +308,7 @@ export function describeChange(from: Setup, to: Setup): string {
     return 'Change title';
   }
   if (from.roadRoutes !== to.roadRoutes || from.hiddenLines !== to.hiddenLines) return 'Change picked roads';
+  if (from.marks !== to.marks) return describeMarksChange(from.marks, to.marks);
   if (from.routes !== to.routes) {
     const added = to.routes.items.length - from.routes.items.length;
     if (added > 0) return added === 1 ? 'Add route' : 'Add routes';
@@ -320,5 +322,6 @@ export function describeChange(from: Setup, to: Setup): string {
   if (from.cleanup !== to.cleanup || from.cleanupPreset !== to.cleanupPreset) return 'Change cleanup';
   if (from.source !== to.source) return 'Change map data';
   if (from.plotter !== to.plotter) return 'Change plotter settings';
+  if (from.laser !== to.laser) return 'Change laser settings';
   return 'Change settings';
 }

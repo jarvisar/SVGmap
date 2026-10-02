@@ -4,6 +4,7 @@ import { defaultRenderSettings, defaultStyle } from '../engine/defaults.ts';
 import { fitNumber } from '../engine/limits.ts';
 import { DEFAULT_CLEANUP, type CleanupSettings } from '../engine/lines/cleanup.ts';
 import { DEFAULT_PRODUCT } from '../engine/presets.ts';
+import { sanitizeMarks } from '../engine/marks/marks.ts';
 import { type LonLatLine, type RoadRoute, sanitizeLines, sanitizeRoutes } from '../engine/routes/picks.ts';
 import { decodePolyline, encodePolyline } from '../engine/routes/polyline.ts';
 import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute, encodeRoute } from '../engine/routes/route.ts';
@@ -97,6 +98,7 @@ export function toRenderSettings(s: Settings): RenderSettings {
     laser: s.laser,
     roadRoutes: s.roadRoutes,
     hiddenLines: s.hiddenLines,
+    marks: s.marks,
     title: s.label.text.trim() || 'Map',
   };
 }
@@ -197,6 +199,7 @@ export function mergeSettings<T>(base: T, patch: unknown, path: string[] = []): 
   // Picked roads are lists of coordinates, cleaned on their own.
   if (path.length === 1 && path[0] === 'roadRoutes') return sanitizeRoutes(patch) as T;
   if (path.length === 1 && path[0] === 'hiddenLines') return sanitizeLines(patch) as T;
+  if (path.length === 1 && path[0] === 'marks') return sanitizeMarks(patch) as T;
   // The only other list in the settings.
   if (Array.isArray(base)) return ((path.join('.') === 'routes.items' ? fitRoutes(patch) : undefined) ?? base) as T;
   if (isObject(base)) {

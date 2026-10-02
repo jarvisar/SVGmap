@@ -12,6 +12,7 @@ import type { Path } from './lines/geometry.ts';
 import type { RenderResult } from './result.ts';
 import type { RenderSettings } from './settings.ts';
 import { isSidepath, leaveOutSidepaths, projectSidepaths, sidepathTolerance } from './sidewalks.ts';
+import { hasText, markFont } from './marks/marks.ts';
 import { usesSubtitleFont } from './text/label.ts';
 import { type CustomFont, FontLoader } from './text/loadFont.ts';
 import type { LoadedFont } from './text/outline.ts';
@@ -208,10 +209,19 @@ export class RenderService {
       subtitle = subtitleId === label.font || !usesSubtitleFont(label) ? title : await this.fonts.load(subtitleId, request.customFont);
     }
 
+    // A mark's font that won't load (a custom font that's gone) falls back to
+    // the default, so one mark can't stop the whole render.
+    const marks = new Map<string, LoadedFont>();
+    for (const mark of settings.marks) {
+      const id = markFont(mark, label.font);
+      if (!hasText(mark) || marks.has(id)) continue;
+      marks.set(id, await this.fonts.load(id, request.customFont).catch(() => this.fonts.load('montserrat', null)));
+    }
+
     onProgress({ stage: 'compose', message: 'Cleaning up lines' });
     await tick();
     if (isCancelled()) throw new CancelledError();
-    return compose(settings, layout, entry.value, { title, subtitle }, entry.memo);
+    return compose(settings, layout, entry.value, { title, subtitle, marks }, entry.memo);
   }
 
   // The tiles' geometry with Overture's missing buildings added. Kept apart

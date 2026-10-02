@@ -16,6 +16,7 @@ import { acceptPolygon } from './tiles/schema.ts';
 import { areaMm2, intersectWith, makeFillTester, resolveSurfaces, toPath64, unionAll } from './fills.ts';
 import type { OutputGroup, RenderResult } from './result.ts';
 import { buildLabel } from './text/label.ts';
+import { DEFAULT_MARK, type MapMark } from './marks/marks.ts';
 
 const tile = new Uint8Array(readFileSync(new URL('./fixtures/vancouver-14-2589-5606.pbf', import.meta.url)));
 const centre = worldToLonLat(2589.5 * TILE_EXTENT, 5606.5 * TILE_EXTENT, 14);
@@ -241,6 +242,52 @@ describe('title styles in a render', () => {
       expect(group(broken, 'border')!.subpaths).toBeGreaterThan(group(plain, 'border')!.subpaths);
       expect(group(broken, 'band')).toBeDefined();
     }
+  });
+});
+
+describe('pins and text in a render', () => {
+  const bytes = readFileSync('public/fonts/Montserrat-SemiBold.ttf');
+  const montserrat = parseOutlineFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  const fonts = { title: font, subtitle: font, marks: new Map([['montserrat', montserrat], ['hershey-sans', font]]) };
+  const at = { lon: centre.lon, lat: centre.lat };
+  const withMarks = (mode: OutputMode, marks: Partial<MapMark>[]) =>
+    render(mode, { marks: marks.map((m, i) => ({ ...DEFAULT_MARK, id: `m${i}`, ...at, ...m })) }, fonts).result;
+  const group = (result: RenderResult, id: string) => result.groups.find((g) => g.id === id);
+  const points = (g: OutputGroup | undefined) =>
+    (g?.paths ?? []).flatMap((p) => [...p.d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map(([, x, y]): [number, number] => [Number(x), Number(y)]));
+  const window = computeLayout(defaultRenderSettings('laser').product, defaultRenderSettings('laser').border).window;
+  const middle = [window.x + window.w / 2, window.y + window.h / 2];
+
+  it('gives each mark a layer of its own, in the title colour unless it has its own', () => {
+    const result = withMarks('laser', [
+      { shape: 'heart', text: 'HOME', font: 'montserrat' },
+      { shape: 'star', color: '#123456', lon: centre.lon + 0.002 },
+    ]);
+    expect(group(result, 'mark-m0')).toMatchObject({ label: 'Heart: HOME', kind: 'fill', color: defaultRenderSettings('laser').style.colors.text });
+    expect(group(result, 'mark-m1')).toMatchObject({ label: 'Star', color: '#123456' });
+    expect(toSvg(result)).toContain('inkscape:label="Heart: HOME" fill="#000000"');
+  });
+
+  it('leaves the map out under a mark and the gap around it', () => {
+    const plain = render('laser').result;
+    const result = withMarks('laser', [{ shape: 'dot', size: 12, gap: 1 }]);
+    const near = (p: [number, number]) => Math.hypot(p[0] - middle[0], p[1] - middle[1]) < 6.9;
+    // The middle of this map has streets and the harbour.
+    expect(['roads', 'water'].every((id) => points(group(plain, id)).some(near))).toBe(true);
+    for (const id of ['roads', 'paths', 'buildings', 'water']) expect(points(group(result, id)).filter(near), id).toEqual([]);
+    expect(withMarks('laser', [{ shape: 'dot', size: 12, clear: false }]).groups.find((g) => g.id === 'roads')!.subpaths).toBe(group(plain, 'roads')!.subpaths);
+  });
+
+  it('draws single-line text as strokes and fills as pen passes on a plotter', () => {
+    const result = withMarks('plotter', [{ shape: 'pin', text: 'HI', font: 'hershey-sans' }]);
+    expect(group(result, 'mark-m0')).toMatchObject({ kind: 'stroke' });
+    expect(group(result, 'mark-m0-lines')).toMatchObject({ kind: 'stroke', label: 'Pin: HI' });
+  });
+
+  it('warns about a mark off the map', () => {
+    const result = withMarks('laser', [{ shape: 'pin', text: 'FAR', lon: centre.lon + 1 }]);
+    expect(group(result, 'mark-m0')).toBeUndefined();
+    expect(result.warnings).toContain('“FAR” is outside the map. Move it or the map to show it.');
   });
 });
 

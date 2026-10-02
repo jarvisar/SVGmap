@@ -1898,3 +1898,182 @@ button.menu-toggle,
   }
 }
 
+
+/* Pins and text: the tools beside the preview, and the form in the card and the sidebar */
+.mark-palette {
+  position: absolute;
+  top: 46px;
+  left: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, 30px);
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid rgb(0 0 0 / 0.22);
+  border-radius: var(--radius);
+  background: var(--panel);
+  background-clip: padding-box;
+  box-shadow: var(--shadow-float);
+}
+
+.mark-tool,
+.mark-shape {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--btn-border);
+  border-bottom-color: var(--btn-border-bottom);
+  border-radius: var(--radius);
+  background: linear-gradient(var(--btn-1), var(--btn-2));
+  box-shadow: var(--btn-highlight);
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.mark-tool:hover:not(.active),
+.mark-shape:hover:not(.active) {
+  background: linear-gradient(var(--btn-hover-1), var(--btn-hover-2));
+  color: var(--text);
+}
+
+.mark-tool.active,
+.mark-shape.active {
+  border-color: var(--primary-border);
+  background: linear-gradient(var(--picked-1), var(--picked-2));
+  box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.4);
+  color: #fff;
+}
+
+.mark-tool:focus-visible,
+.mark-shape:focus-visible {
+  box-shadow: var(--focus-glow);
+}
+
+.mark-shapes {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.mark-shape {
+  height: 28px;
+}
+
+.mark-ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mark-ideas .btn {
+  gap: 4px;
+  font-weight: normal;
+}
+
+.mark-text.input {
+  height: auto;
+  min-height: 44px;
+  padding: 4px 7px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.mark-reset {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.mark-editor .notice {
+  margin-top: 8px;
+}
+
+.mark-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mark-list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.mark-list li.open {
+  padding-bottom: 8px;
+}
+
+.mark-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mark-row-name {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 5px 2px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.mark-row-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mark-row-name:hover span,
+.mark-row-name[aria-expanded='true'] span {
+  color: var(--link);
+}
+
+.mark-row-name svg {
+  flex: none;
+  color: var(--text-2);
+}
+
+.mark-row-empty {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* Frames and handles over the preview */
+.mark-outline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  opacity: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.mark-rotate {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.mark-rotate-stem {
+  stroke: var(--accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (max-width: 800px) {
+  /* A row across the top, which scrolls if it doesn't fit. */
+  .mark-palette {
+    right: 10px;
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 30px;
+    overflow-x: auto;
+  }
+}
