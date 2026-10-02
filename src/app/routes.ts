@@ -29,13 +29,27 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 // closed, so their problems show up as a notice at the bottom.
 export const useImportNotice = create<{ errors: string[] }>(() => ({ errors: [] }));
 
+const tooMany = (name: string) => `${name}: there can be up to ${MAX_ROUTES} routes. Remove some first.`;
+
+// Imports run one at a time. Two at once, like files dropped while the last
+// ones are still being read, would each count the routes from before the
+// other and go past the limit together.
+let importing: Promise<unknown> = Promise.resolve();
+
 // Adds every file it can read as a route, and frames the map around the routes.
-export async function importRouteFiles(files: Iterable<File>): Promise<ImportResult> {
+export function importRouteFiles(files: Iterable<File>): Promise<ImportResult> {
+  const list = Array.from(files);
+  const run = importing.then(() => importFiles(list));
+  importing = run.catch(() => {});
+  return run;
+}
+
+async function importFiles(files: File[]): Promise<ImportResult> {
   const added: RouteData[] = [];
   const errors: string[] = [];
   for (const file of files) {
     if (useApp.getState().routes.items.length + added.length >= MAX_ROUTES) {
-      errors.push(`${file.name}: there can be up to ${MAX_ROUTES} routes. Remove some first.`);
+      errors.push(tooMany(file.name));
       continue;
     }
     try {
@@ -50,10 +64,15 @@ export async function importRouteFiles(files: Iterable<File>): Promise<ImportRes
   if (added.length > 0) {
     // Worked out first, so adding them and moving the map undo as one.
     const area = await fittedArea([...useApp.getState().routes.items, ...added], false);
-    asChange(added.length === 1 ? 'Add route' : 'Add routes', () => {
-      useApp.getState().addRoutes(added);
-      if (area) useApp.getState().setArea(area);
-    });
+    // Checked again in case an undo brought routes back while the files were read.
+    const room = Math.max(0, MAX_ROUTES - useApp.getState().routes.items.length);
+    for (const route of added.splice(room)) errors.push(tooMany(route.name));
+    if (added.length > 0) {
+      asChange(added.length === 1 ? 'Add route' : 'Add routes', () => {
+        useApp.getState().addRoutes(added);
+        if (area) useApp.getState().setArea(area);
+      });
+    }
   }
   return { added: added.map((r) => r.name), errors };
 }

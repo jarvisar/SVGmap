@@ -6,7 +6,9 @@ import { flash } from './flash.ts';
 import { useApp } from './store.ts';
 import { asChange } from './undo.ts';
 
-const ROUTE_COLOURS = ['#E4002B', '#0057B8', '#FF8200', '#7A3E9D', '#009A44', '#E0A800', '#00A3AD', '#D62598'];
+// One for each of the MAX_ROAD_ROUTES. Plotter files and laser software group
+// paths by colour, so two road routes in one colour end up as one pen or layer.
+const ROUTE_COLOURS = ['#E4002B', '#0057B8', '#FF8200', '#7A3E9D', '#009A44', '#E0A800', '#00A3AD', '#D62598', '#84BD00', '#002D72', '#F395C7', '#5B6770'];
 
 function newId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -18,12 +20,14 @@ export function hasPicks(s: { roadRoutes: RoadRoute[]; hiddenLines: LonLatLine[]
 
 /** A new road route in a colour none of the others have. Returns its id, or null at the limit. */
 export function addRoadRoute(name?: string): string | null {
-  const routes = useApp.getState().roadRoutes;
+  const s = useApp.getState();
+  const routes = s.roadRoutes;
   if (routes.length >= MAX_ROAD_ROUTES) {
     flash(`A map can have at most ${MAX_ROAD_ROUTES} road routes.`, 4000);
     return null;
   }
-  const used = new Set(routes.map((r) => r.color));
+  // The layers' own colours are taken too, so a road route doesn't join one of them.
+  const used = new Set([...routes.map((r) => r.color), ...Object.values(s.styles[s.mode].colors)].map((c) => c.toUpperCase()));
   const color = ROUTE_COLOURS.find((c) => !used.has(c)) ?? ROUTE_COLOURS[routes.length % ROUTE_COLOURS.length];
   const route: RoadRoute = { id: newId(), name: name?.trim() || `Road route ${routes.length + 1}`, color, width: 0.6, lines: [] };
   useApp.getState().set({ roadRoutes: [...routes, route] });
@@ -35,7 +39,7 @@ export function updateRoadRoute(id: string, patch: Partial<Omit<RoadRoute, 'id' 
   useApp.getState().set({ roadRoutes: routes.map((r) => (r.id === id ? { ...r, ...patch, color: (patch.color ?? r.color).toUpperCase() } : r)) });
 }
 
-// Undo brings these back, but phones have no room for the undo buttons.
+// Undo brings these back, but on phones the undo buttons are tucked away in the settings drawer.
 export function deleteRoadRoute(id: string): void {
   const route = useApp.getState().roadRoutes.find((r) => r.id === id);
   if (!route) return;

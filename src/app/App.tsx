@@ -43,26 +43,49 @@ function download(name: string, content: Blob) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function openSharedLink() {
+  const shared = settingsFromUrl();
+  if (!shared) return;
+  // Undo goes back to the settings from before the link.
+  asChange('Open link', () => useApp.getState().set(shared));
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+}
+
+// No stored font (cleared storage or someone else's share link), so fall back.
+function dropMissingFont() {
+  if (getCustomFont()) return;
+  const app = useApp.getState();
+  quietly(() => {
+    if (app.label.font === CUSTOM_FONT_ID) app.setLabel({ font: DEFAULT_LABEL.font });
+    if (useApp.getState().label.subtitleFont === CUSTOM_FONT_ID) app.setLabel({ subtitleFont: '' });
+  });
+}
+
 function useStartup() {
   useEffect(() => {
     startUndo();
-    const shared = settingsFromUrl();
-    if (shared) {
-      // Undo goes back to the settings from before the link.
-      asChange('Open link', () => useApp.getState().set(shared));
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
-    void loadStoredFont().then((font) => {
-      const app = useApp.getState();
-      app.setCustomFont(font);
-      if (font) return;
-      // No stored font (cleared storage or someone else's share link), so fall back.
-      quietly(() => {
-        if (app.label.font === CUSTOM_FONT_ID) app.setLabel({ font: DEFAULT_LABEL.font });
-        if (useApp.getState().label.subtitleFont === CUSTOM_FONT_ID) app.setLabel({ subtitleFont: '' });
-      });
+    openSharedLink();
+    const fontLoaded = loadStoredFont().then((font) => {
+      useApp.getState().setCustomFont(font);
+      dropMissingFont();
     });
+    // A link opened in a tab that already has the app open doesn't load the page again.
+    const onHashChange = () => {
+      openSharedLink();
+      void fontLoaded.then(dropMissingFont);
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+}
+
+async function copyShareLink() {
+  try {
+    await navigator.clipboard.writeText(shareUrl(selectSettings(useApp.getState())));
+    flash('Link copied');
+  } catch {
+    flash('Could not copy the link');
+  }
 }
 
 function resetSettings() {
@@ -97,6 +120,13 @@ function UndoButtons() {
 const Sidebar = memo(function Sidebar() {
   return (
     <aside className="sidebar">
+      {/* Phones have no room for these in the top bar. */}
+      <div className="sidebar-actions">
+        <UndoButtons />
+        <button type="button" className="btn" onClick={() => void copyShareLink()}>
+          Share link
+        </button>
+      </div>
       <LocationPanel />
       <RoutesPanel />
       <SizePanel />
@@ -200,15 +230,6 @@ export function App() {
     }
   };
 
-  const share = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl(settings));
-      flash('Link copied');
-    } catch {
-      flash('Could not copy the link');
-    }
-  };
-
   let statusText = flashText;
   let barWidth = 0;
   if (!statusText && status === 'working' && progress) {
@@ -253,7 +274,7 @@ export function App() {
           {statusText}
         </div>
         <UndoButtons />
-        <button type="button" className="btn share-button" onClick={share}>
+        <button type="button" className="btn share-button" onClick={() => void copyShareLink()}>
           Share
         </button>
         {view === 'map' ? (
@@ -271,8 +292,14 @@ export function App() {
             >
               PNG
             </button>
-            <button type="button" className="btn btn-primary" onClick={save} disabled={!result || status !== 'done' || key !== renderedKey}>
-              Download SVG
+            <button
+              type="button"
+              className="btn btn-primary"
+              aria-label="Download SVG"
+              onClick={save}
+              disabled={!result || status !== 'done' || key !== renderedKey}
+            >
+              <span className="wide-only">Download</span> SVG
             </button>
           </>
         )}

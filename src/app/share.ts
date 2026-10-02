@@ -26,14 +26,23 @@ function fromBase64Url(value: string): string {
   return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
 }
 
+// Links from before routes have no route colour, so old links (no v) get one
+// from their own palette in fillRouteColours. Newer links leave it out only
+// when it's the default, and filling it in would change a colour the user
+// picked to match the default palette's.
+const SHARE_VERSION = 2;
+
 export function encodeSettings(settings: Settings): string {
-  return toBase64Url(JSON.stringify(diff(packPicks(settings), packPicks(defaultSettings())) ?? {}));
+  const changed = diff(packPicks(settings), packPicks(defaultSettings())) ?? {};
+  return toBase64Url(JSON.stringify({ v: SHARE_VERSION, ...(changed as object) }));
 }
 
 // null when the text isn't a share link at all.
 export function decodeSettings(encoded: string): Settings | null {
   try {
-    return mergeSettings(defaultSettings(), unpackPicks(fillRouteColours(JSON.parse(fromBase64Url(encoded)))));
+    const json: unknown = JSON.parse(fromBase64Url(encoded));
+    const current = isObject(json) && typeof json.v === 'number' && json.v >= SHARE_VERSION;
+    return mergeSettings(defaultSettings(), unpackPicks(current ? json : fillRouteColours(json)));
   } catch {
     return null;
   }

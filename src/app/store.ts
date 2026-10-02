@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { AreaSpec } from '../engine/geo/transform.ts';
 import { type BorderSettings, type ProductSettings, computeLayout } from '../engine/layout/layout.ts';
 import type { CleanupSettings } from '../engine/lines/cleanup.ts';
@@ -74,7 +74,7 @@ interface Actions {
   addRoutes: (items: RouteData[]) => void;
   updateRoute: (id: string, patch: Partial<Omit<RouteData, 'id'>>) => void;
   removeRoute: (id: string) => void;
-  // Everything except the place, the title text, the routes and the picked roads.
+  // Everything except the place, the title and subtitle text, the routes and the picked roads.
   reset: () => void;
 }
 
@@ -90,6 +90,32 @@ export interface AppState extends Settings, Actions {
   scaleLocked: boolean;
   setScaleLocked: (locked: boolean) => void;
 }
+
+// Set when the settings couldn't be saved, so SaveNotice can say so. Cleared by
+// the next save that works. hidden is the notice being closed for this failure.
+export const useSaveFailed = create<{ failed: boolean; hidden: boolean }>(() => ({ failed: false, hidden: false }));
+
+// Settings are saved on every change. A full or blocked localStorage throws,
+// and the error would come out of whatever action made the change, after the
+// screen already shows it. The change is kept in memory instead.
+const settingsStorage = createJSONStorage(() => {
+  const local = window.localStorage;
+  return {
+    getItem: (name: string) => local.getItem(name),
+    setItem: (name: string, value: string) => {
+      try {
+        local.setItem(name, value);
+        if (useSaveFailed.getState().failed) useSaveFailed.setState({ failed: false, hidden: false });
+      } catch (error) {
+        if (!useSaveFailed.getState().failed) {
+          console.error(error);
+          useSaveFailed.setState({ failed: true });
+        }
+      }
+    },
+    removeItem: (name: string) => local.removeItem(name),
+  };
+});
 
 export const useApp = create<AppState>()(
   persist(
@@ -190,7 +216,7 @@ export const useApp = create<AppState>()(
           return {
             ...defaults,
             area: s.area,
-            label: { ...defaults.label, text: s.label.text },
+            label: { ...defaults.label, text: s.label.text, subtitle: s.label.subtitle },
             routes: { ...defaults.routes, items: s.routes.items },
             roadRoutes: s.roadRoutes,
             hiddenLines: s.hiddenLines,
@@ -200,6 +226,7 @@ export const useApp = create<AppState>()(
     }),
     {
       name: 'svgmap-settings',
+      storage: settingsStorage,
       version: 3,
       migrate: (persisted, version) => migrateSettings(persisted, version) as AppState,
       partialize: (s) => {

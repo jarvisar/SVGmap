@@ -54,9 +54,10 @@ export default defineConfig({
           },
           {
             // Tile and sprite URLs include the build version and glyphs never change,
-            // so a cached copy is always good. Areas that were viewed before can be
-            // generated again offline. City center tiles are 200 to 500 KB each, so
-            // keep the count low.
+            // so a cached copy is always good. Maps that were generated before can be
+            // generated again offline. Only viewing an area doesn't do it, the map view
+            // stops a zoom level or two short of the zoom 14 tiles a render reads.
+            // City center tiles are 200 to 500 KB each, so keep the count low.
             urlPattern: /^https:\/\/tiles\.openfreemap\.org\//,
             handler: 'CacheFirst',
             options: {

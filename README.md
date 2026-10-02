@@ -16,7 +16,7 @@ Click `Generate` to build the SVG. The preview updates as you change settings. S
 
 Click the title on the map or in the preview to move it or resize it. See Title Styles below. `Pick roads` in the preview picks out roads for a route of their own colour, or leaves them out. See Picking Roads below.
 
-Use `Ctrl+Z` to undo a change and `Ctrl+Y` or `Ctrl+Shift+Z` to redo it (`Cmd` on a Mac), or the arrows in the top bar. A drag, a pulled slider or typing in one field undoes as one step. Typing in a field keeps its own undo until you click away from it.
+Use `Ctrl+Z` to undo a change and `Ctrl+Y` or `Ctrl+Shift+Z` to redo it (`Cmd` on a Mac), or the arrows in the top bar. On a phone, the arrows and `Share link` are at the top of `Settings`. A drag, a pulled slider or typing in one field undoes as one step. Typing in a field keeps its own undo until you click away from it.
 
 Settings are saved in the browser. `Reset settings` at the bottom of the sidebar puts everything back to the defaults except the location, title, routes and picked roads.
 
@@ -35,7 +35,7 @@ The settings are:
 
 SVGmap can be installed as an app. Chrome, Edge and Android show an `Install` prompt at the bottom of the page. The install button in the address bar or browser menu works too. On an iPhone or iPad, tap `Share` and then `Add to Home Screen`.
 
-The app and the title fonts are saved on the first visit, so it opens without a connection. Map tiles are saved as you use them (the last 500 tiles, for up to 30 days), so areas you've already viewed can be generated again offline. Overture building data is saved too (up to 200 MB), so maps you've already added them to work offline as well. Place search always needs a connection, and tiles from a custom source under Map data aren't saved.
+The app and the title fonts are saved on the first visit, so it opens without a connection. Map tiles are saved as you use them (the last 500 tiles, for up to 30 days), so maps you've already generated can be generated again offline. Only viewing an area isn't enough, since the map view uses less detailed tiles than `Generate` needs. Overture building data is saved too (up to 200 MB), so maps you've already added them to work offline as well. Place search always needs a connection, and tiles from a custom source under Map data aren't saved.
 
 When a new version is deployed, a notice asks you to reload. It never reloads on its own.
 
@@ -152,7 +152,7 @@ Run the tests with `npm test`. The live render test is skipped unless `SVGMAP_NE
 * Undo starts over when the page is reloaded and keeps the last 100 changes.
 * Custom fonts can be TTF, OTF or WOFF. WOFF2 files don't load. A font whose ligatures or Arabic joining opentype.js can't read, like Calibri, is drawn a letter at a time, with a warning. Letters the font doesn't have are drawn as boxes, or left out, and listed in a warning.
 * The wood preview is only a rough idea of how the fills will look. Test your settings on scrap.
-* On the very first visit, the map style loads before the service worker starts, so it isn't saved until the next visit. Going offline right after a first visit can leave the map blank, but generating still works for tiles that were loaded.
+* On the very first visit, the map style loads before the service worker starts, so it isn't saved until the next visit. Going offline right after a first visit can leave the map blank, but maps that were already generated can still be generated again.
 * Overture buildings are only added at full detail (zoom 14), so a map that needs more tiles than the limit gets a warning instead. Maps that would need more than 150 MB of building data, or that cross the 180th meridian, are left without them.
 * Machine-learning footprints are rougher than mapped ones: blobby corners, whole blocks merged into one shape, and now and then something that isn't a building.
 * With Overture buildings on, every settings change is slower where there are lots of them. The Iztapalapa map above takes about 0.45 s to update instead of 0.1 s.

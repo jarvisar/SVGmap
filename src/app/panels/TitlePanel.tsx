@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { fieldRange } from '../../engine/limits.ts';
 import { type LabelPreset, applyLabelPreset, formatCoordinates } from '../../engine/presets.ts';
 import type { FillMode } from '../../engine/settings.ts';
 import { CUSTOM_FONT_ID, FONTS, fontInfo } from '../../engine/text/fonts.ts';
@@ -195,9 +196,9 @@ export function TitlePanel() {
               e.target.value = '';
             }}
           />
-          <Slider label="Size" value={label.size} min={40} max={250} step={5} unit="%" onChange={(size) => set({ size })} />
+          <Slider label="Size" value={label.size} min={40} max={250} step={5} limits={fieldRange('label.size')} unit="%" onChange={(size) => set({ size })} />
           {AUTOFIT_HELP[kind] ? <Check label="Autofit text" title={AUTOFIT_HELP[kind]} checked={label.autofit} onChange={(autofit) => set({ autofit })} /> : null}
-          <Slider label="Letter spacing" value={label.titleSpacing} min={80} max={200} step={5} scale={100} unit="%" onChange={(titleSpacing) => set({ titleSpacing })} />
+          <Slider label="Letter spacing" value={label.titleSpacing} min={80} max={200} step={5} limits={fieldRange('label.titleSpacing', 100)} scale={100} unit="%" onChange={(titleSpacing) => set({ titleSpacing })} />
           {mapInLetters ? null : (
             <SelectField<FillMode>
               label="Lettering"
@@ -229,7 +230,7 @@ export function TitlePanel() {
           ) : null}
           {kind === 'band' ? (
             <>
-              <Slider label="Band height" value={label.bandHeight} min={5} max={50} step={1} unit="%" onChange={(bandHeight) => set({ bandHeight })} />
+              <Slider label="Band height" value={label.bandHeight} min={5} max={50} step={1} limits={fieldRange('label.bandHeight')} unit="%" onChange={(bandHeight) => set({ bandHeight })} />
               <Field label="Alignment">
                 <Segmented<'left' | 'center' | 'right'>
                   label="Alignment"
@@ -248,7 +249,7 @@ export function TitlePanel() {
           ) : null}
           {kind === 'ribbon' ? (
             <>
-              <Slider label="Arch" value={label.ribbonArch} min={0} max={100} step={5} unit="%" onChange={(ribbonArch) => set({ ribbonArch })} />
+              <Slider label="Arch" value={label.ribbonArch} min={0} max={100} step={5} limits={fieldRange('label.ribbonArch')} unit="%" onChange={(ribbonArch) => set({ ribbonArch })} />
               <Check label="Solid ribbon" title={solidHint} checked={label.solid} onChange={(solid) => set({ solid })} />
             </>
           ) : null}

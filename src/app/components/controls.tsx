@@ -115,7 +115,9 @@ export function NumberField(props: {
   );
 }
 
-// The number box next to the slider can go past the slider's range.
+// The number box next to the slider can go past the slider's range, up to
+// limits, the setting's range from engine/limits.ts in the shown units.
+// Without them a typed value the render clamps would still show as typed.
 export function Slider(props: {
   label: string;
   value: number;
@@ -123,6 +125,7 @@ export function Slider(props: {
   min: number;
   max: number;
   step: number;
+  limits?: { min: number; max: number };
   scale?: number;
   unit?: string;
   hint?: ReactNode;
@@ -145,6 +148,8 @@ export function Slider(props: {
         <NumberInput
           value={props.value}
           onChange={props.onChange}
+          min={props.limits?.min}
+          max={props.limits?.max}
           step={props.step}
           scale={scale}
           unit={props.unit}

@@ -2,8 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App.tsx';
 import { ErrorBoundary } from './app/components/ErrorBoundary.tsx';
+import { FlashNotice } from './app/components/FlashNotice.tsx';
 import { ImportNotice } from './app/components/ImportNotice.tsx';
 import { InstallPrompt } from './app/components/InstallPrompt.tsx';
+import { SaveNotice } from './app/components/SaveNotice.tsx';
 import { UpdateNotice } from './app/components/UpdateNotice.tsx';
 import './app/styles.css';
 
@@ -17,6 +19,8 @@ createRoot(document.getElementById('root')!).render(
       <UpdateNotice />
       <InstallPrompt />
       <ImportNotice />
+      <SaveNotice />
+      <FlashNotice />
     </div>
   </StrictMode>,
 );

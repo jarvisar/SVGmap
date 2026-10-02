@@ -3,10 +3,10 @@ import { defaultRenderSettings } from '../engine/defaults.ts';
 import type { LonLatLine, RoadRoute } from '../engine/routes/picks.ts';
 import { encodePolyline } from '../engine/routes/polyline.ts';
 import { MAX_ROUTE_LINES, MAX_ROUTE_POINTS, decodeRoute } from '../engine/routes/route.ts';
-import type { RouteData } from '../engine/settings.ts';
+import { LASER_PALETTES, type RouteData } from '../engine/settings.ts';
 import { decodeSettings, encodeSettings } from './share.ts';
 import { defaultSettings, mergeSettings, packPicks, toRenderSettings, unpackPicks } from './settings.ts';
-import { useApp } from './store.ts';
+import { selectSettings, useApp } from './store.ts';
 
 const ROUTE: RouteData = {
   id: 'abc123',
@@ -98,6 +98,16 @@ describe('settings', () => {
   });
 });
 
+describe('reset', () => {
+  it('keeps the title and subtitle on Reset settings', () => {
+    useApp.getState().setLabel({ text: 'ROME', subtitle: 'ITALIA', size: 140 });
+    useApp.getState().reset();
+    const label = useApp.getState().label;
+    expect([label.text, label.subtitle, label.size]).toEqual(['ROME', 'ITALIA', defaultSettings().label.size]);
+    useApp.setState({ label: defaultSettings().label });
+  });
+});
+
 describe('saved routes', () => {
   it('come back from saved settings', () => {
     const merged = mergeSettings(defaultSettings(), { routes: { items: [ROUTE], gap: 0.8 } });
@@ -168,9 +178,21 @@ describe('share links', () => {
     const settings = defaultSettings();
     settings.label.text = 'ROME';
     const decode = (encoded: string) => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0))));
-    expect(decode(encodeSettings(settings))).toEqual({ label: { text: 'ROME' } });
+    expect(decode(encodeSettings(settings))).toEqual({ v: 2, label: { text: 'ROME' } });
     settings.source = { ...settings.source, overtureBuildings: true };
-    expect(decode(encodeSettings(settings))).toEqual({ label: { text: 'ROME' }, source: { overtureBuildings: true } });
+    expect(decode(encodeSettings(settings))).toEqual({ v: 2, label: { text: 'ROME' }, source: { overtureBuildings: true } });
+  });
+
+  it('keep a route colour that matches the default palette', () => {
+    const app = useApp.getState();
+    app.setLaserPalette('lightburn');
+    app.setPrintTheme('minimal');
+    useApp.getState().setStyle({ colors: { ...useApp.getState().styles.laser.colors, route: LASER_PALETTES.distinct.colors.route } });
+    const settings = selectSettings(useApp.getState());
+    const decoded = decodeSettings(encodeSettings(settings))!;
+    expect(decoded.styles.laser.colors.route).toBe(LASER_PALETTES.distinct.colors.route);
+    expect(decoded).toEqual(settings);
+    useApp.setState(defaultSettings());
   });
 
   it('carry the routes', () => {

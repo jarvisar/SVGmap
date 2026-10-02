@@ -53,6 +53,7 @@ export function CleanupPanel() {
             // Enough for a laser at a usable step, and more when a thick pen needs it.
             max={Math.max(1.5, Math.ceil(c.lineSpacing * 10) / 10)}
             step={0.01}
+            limits={fieldRange('cleanup.lineSpacing')}
             unit="mm"
             onChange={(lineSpacing) => set({ lineSpacing })}
             hint="Parallel lines closer than this are merged. Set it to about the beam or pen width."
