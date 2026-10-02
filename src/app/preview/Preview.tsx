@@ -343,7 +343,8 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
       e.preventDefault();
       return;
     }
-    if (!box || size.w === 0) return;
+    // Leave Ctrl/Cmd with +, - and 0 to the browser's own zoom.
+    if (!box || size.w === 0 || e.ctrlKey || e.metaKey || e.altKey) return;
     const step = box.w / 10;
     const pan: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
     if (pan[e.key]) setBox({ ...box, x: box.x + pan[e.key][0], y: box.y + pan[e.key][1] });

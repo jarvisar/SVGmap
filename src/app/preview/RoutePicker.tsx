@@ -328,7 +328,10 @@ function RoadRouteRow({ route, print }: { route: RoadRoute; print: boolean }) {
         aria-label="Road route name"
         maxLength={60}
         onChange={(event) => setName(event.target.value)}
-        onBlur={() => name.trim() && name !== route.name && updateRoadRoute(route.id, { name: name.trim() })}
+        onBlur={() => {
+          if (!name.trim()) setName(route.name);
+          else if (name !== route.name) updateRoadRoute(route.id, { name: name.trim() });
+        }}
         onKeyDown={(event) => event.key === 'Enter' && (event.target as HTMLInputElement).blur()}
       />
       {print ? <NumberInput value={route.width} min={0.02} max={5} step={0.05} unit="mm" label={`Line width of ${route.name}`} onChange={(width) => updateRoadRoute(route.id, { width })} /> : null}
