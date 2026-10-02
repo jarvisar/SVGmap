@@ -47,6 +47,10 @@ const LATEST_TTL_MS = 60 * 60 * 1000;
 // Only a release named by the catalog whose index was read is saved.
 const SAVED_RELEASE_KEY = 'overture-latest-release';
 const SAVED_RELEASE_TTL_MS = 6 * 60 * 60 * 1000;
+// The release each area was last read from, by its bounds. Cached file reads
+// are keyed by URL, which includes the release, so offline an area read
+// before a newer release came out is only found under its own release.
+const AREA_RELEASE_KEY = 'overture-area-release ';
 const PROGRESS_INTERVAL_MS = 100;
 // Row groups in progress at a time. Enough to keep the request limit busy,
 // while a large area does not pile up downloaded chunks waiting to be
@@ -167,6 +171,8 @@ export interface FetchOvertureOptions {
 
 /** Overture's servers did not answer. The message can be shown as it is. */
 export class OvertureUnavailableError extends Error {
+  readonly offline: boolean;
+
   constructor(offline: boolean, options?: ErrorOptions) {
     super(
       offline
@@ -175,6 +181,7 @@ export class OvertureUnavailableError extends Error {
       options,
     );
     this.name = 'OvertureUnavailableError';
+    this.offline = offline;
   }
 }
 
@@ -1082,6 +1089,25 @@ function jobName(job: Job): string {
  * not answer. Both messages can be shown as they are.
  */
 export async function fetchOverture(options: FetchOvertureOptions): Promise<OvertureData> {
+  if (options.release !== undefined) return readOverture(options);
+  const { west, south, east, north } = options.bounds;
+  const key = AREA_RELEASE_KEY + [west, south, east, north].join(',');
+  try {
+    const data = await readOverture(options);
+    storeCached(key, new TextEncoder().encode(data.release).buffer);
+    return data;
+  } catch (error) {
+    if (!(error instanceof OvertureUnavailableError && error.offline)) throw error;
+    const saved = await loadCached(key);
+    const release = saved && new TextDecoder().decode(saved);
+    if (!release) throw error;
+    return readOverture({ ...options, release }).catch((retryError: unknown) => {
+      throw options.signal?.aborted ? retryError : error;
+    });
+  }
+}
+
+async function readOverture(options: FetchOvertureOptions): Promise<OvertureData> {
   const { bounds, keep } = options;
   checkBounds(bounds);
   const types = OVERTURE_TYPES;
@@ -1218,7 +1244,9 @@ export async function fetchOverture(options: FetchOvertureOptions): Promise<Over
     return { release, bounds: { ...bounds }, features, bytes, stats: tracker.stats };
   } catch (error) {
     controller.abort(error);
-    throw outer?.aborted ? outer.reason : error;
+    if (outer?.aborted) throw outer.reason;
+    // A file read that fails part way would otherwise show its S3 URL.
+    throw serverTrouble(error) ? unavailable([error]) : error;
   } finally {
     outer?.removeEventListener('abort', forward);
   }

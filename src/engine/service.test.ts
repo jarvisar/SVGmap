@@ -230,7 +230,8 @@ describe('buildings from Overture', () => {
     expect(result.stats.zoom).toBe(13);
     expect(result.stats.overtureBuildings).toBe(0);
     expect(result.stats.overtureFailed).toBeUndefined();
-    expect(result.warnings).toEqual([expect.stringMatching(/only added at full detail \(zoom 14\)/)]);
+    // Only the fixture's zoom 14 tile has data, so these tiles are all empty.
+    expect(result.warnings).toEqual([expect.stringMatching(/all empty/), expect.stringMatching(/only added at full detail \(zoom 14\)/)]);
     expect(result.groups).toEqual(off.groups);
     expect(result.meta.attribution).toBe('© OpenStreetMap contributors');
   });
@@ -300,27 +301,56 @@ describe('buildings from Overture', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('stops the download when the render is cancelled', async () => {
-    let signal: AbortSignal | undefined;
+  // Downloads that never finish on their own, but stop when aborted.
+  function hangingDownloads() {
+    const calls: { options: FetchOvertureOptions; finish: () => void }[] = [];
     fetchMock.mockImplementation(
       (options) =>
-        new Promise((_resolve, reject) => {
-          signal = options.signal;
+        new Promise((resolve, reject) => {
+          calls.push({ options, finish: () => resolve(answer(options)) });
           options.signal!.addEventListener('abort', () => reject(options.signal!.reason));
         }),
     );
+    return calls;
+  }
+
+  it('keeps the download going for the next render when one is cancelled', async () => {
+    const calls = hangingDownloads();
     let cancelled = false;
     const svc = service();
-    const render = svc.render({ settings: settings() }, () => {}, () => cancelled);
-    await vi.waitFor(() => expect(signal).toBeDefined());
+    const first = svc.render({ settings: settings() }, () => {}, () => cancelled);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
     cancelled = true;
-    await expect(render).rejects.toBeInstanceOf(CancelledError);
-    expect(signal!.aborted).toBe(true);
+    await expect(first).rejects.toBeInstanceOf(CancelledError);
+    expect(calls[0].options.signal!.aborted).toBe(false);
 
-    // The next render downloads them again.
+    // A settings change picks up the same download, along with its progress so far.
+    const progress: RenderProgress[] = [];
+    const second = svc.render({ settings: settings((s) => (s.style.colors.water = '#000000')) }, (p) => progress.push(p));
+    await vi.waitFor(() => expect(progress.some((p) => p.stage === 'buildings')).toBe(true));
+    calls[0].finish();
+    expect((await second).stats.overtureBuildings).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops the download once a render wants another area or no buildings', async () => {
+    const calls = hangingDownloads();
+    let cancelled = false;
+    const svc = service();
+    void svc.render({ settings: settings() }, () => {}, () => cancelled).catch(() => {});
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    cancelled = true;
+    await svc.render({ settings: settings((s) => (s.source.overtureBuildings = false)) });
+    expect(calls[0].options.signal!.aborted).toBe(true);
+
+    cancelled = false;
+    void svc.render({ settings: settings() }, () => {}, () => cancelled).catch(() => {});
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    cancelled = true;
     fetchMock.mockImplementation(async (options) => answer(options));
-    const result = await svc.render({ settings: settings() });
-    expect(result.stats.overtureBuildings).toBe(1);
+    await svc.render({ settings: settings((s) => (s.area = { ...s.area, widthM: 1100 })) });
+    expect(calls[1].options.signal!.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("can't add them to a map across the antimeridian", async () => {
@@ -328,6 +358,7 @@ describe('buildings from Overture', () => {
       settings: settings((s) => (s.area = { lon: 179.995, lat: -16.5, bearing: 0, widthM: 2000 })),
     });
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(result.warnings).toEqual([expect.stringMatching(/180th meridian/)]);
+    // The stubbed tiles there are empty.
+    expect(result.warnings).toEqual([expect.stringMatching(/all empty/), expect.stringMatching(/180th meridian/)]);
   });
 });

@@ -53,13 +53,13 @@ describe('setting limits in the app', () => {
     expect(outside.slice(0, 5)).toEqual([]);
   });
 
-  it('keeps only numbers from saved settings and links that the panels would allow', () => {
+  it('brings numbers from saved settings and links into the range the panels allow', () => {
     // A dense window this small made the line cleanup sample forever.
     const defaults = defaultSettings();
     const merged = mergeSettings(defaults, { cleanup: { denseWindow: 1e-320, snapGap: 0.4 }, label: { rotation: 90, size: 1e6 } });
-    expect(merged.cleanup.denseWindow).toBe(defaults.cleanup.denseWindow);
+    expect(merged.cleanup.denseWindow).toBe(0.1);
     expect(merged.cleanup.snapGap).toBe(0.4);
-    expect(merged.label.size).toBe(defaults.label.size);
+    expect(merged.label.size).toBe(250);
     expect(merged.label.rotation).toBe(90);
     expect(mergeSettings(defaults, { label: { rotation: 45 } }).label.rotation).toBe(defaults.label.rotation);
     // The area has its own checks.

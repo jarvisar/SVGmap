@@ -479,6 +479,44 @@ describe('fetchOverture (offline)', () => {
     await expect(run).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('gives the usual messages when a file read fails part way', async () => {
+    const mock = server();
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) =>
+      url === FILES.buildingB ? Promise.reject(new TypeError('Load failed')) : mock.fetch(url, init),
+    );
+    await expect(fetchOverture({ bounds: AREA, release: 'test' })).rejects.toThrow(
+      "Could not reach Overture's servers. Check the internet connection and try again.",
+    );
+
+    await clearCache();
+    const busy = server();
+    busy.failNext((url) => url === FILES.buildingB, 503, 100);
+    vi.stubGlobal('fetch', busy.fetch);
+    await expect(fetchOverture({ bounds: AREA, release: 'test' })).rejects.toThrow("Overture's servers are busy. Try again in a few minutes.");
+  });
+
+  it('reads an area from the release it was read from before when offline', async () => {
+    const store = new Map<string, ArrayBuffer>();
+    setByteCache({ get: async (key) => store.get(key), put: async (key, value) => void store.set(key, value) });
+    vi.stubGlobal('fetch', server().fetch);
+    const online = await fetchOverture({ bounds: AREA });
+    expect(online.release).toBe('test');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // A newer release was found since, and none of its files were read.
+    await clearCache();
+    store.set('overture-latest-release', new TextEncoder().encode(JSON.stringify({ release: '2026-10-21.0', time: Date.now() })).buffer);
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('fetch failed');
+    });
+    const offline = await fetchOverture({ bounds: AREA });
+    expect(offline.release).toBe('test');
+    expect(offline.features).toEqual(online.features);
+
+    // An area read under no release still fails the usual way.
+    await expect(fetchOverture({ bounds: { west: 0, south: 0, east: 0.5, north: 0.5 } })).rejects.toThrow("Could not reach Overture's servers");
+  });
+
   it('drops rows the caller filters out before reading their geometry', async () => {
     configurePageReading(ALWAYS_BY_PAGE);
     const mock = server();

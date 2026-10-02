@@ -13,6 +13,9 @@ function PlaceSearch() {
   const setLabel = useApp((s) => s.setLabel);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Place[]>([]);
+  // The query the results came from. They stay up while the next search runs,
+  // but Enter only picks from results for what's typed now.
+  const [resultsFor, setResultsFor] = useState('');
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
@@ -34,6 +37,7 @@ function PlaceSearch() {
       searchPlaces(query, controller.signal)
         .then((places) => {
           setResults(places);
+          setResultsFor(query);
           setActive(0);
           setMessage(places.length ? '' : 'No places found.');
         })
@@ -79,7 +83,7 @@ function PlaceSearch() {
             const step = e.key === 'ArrowDown' ? 1 : -1;
             setActive((a) => Math.max(0, Math.min(results.length - 1, a + step)));
           }
-          if (e.key === 'Enter' && results.length > 0) choose(results[Math.min(active, results.length - 1)]);
+          if (e.key === 'Enter' && results.length > 0 && resultsFor === query) choose(results[Math.min(active, results.length - 1)]);
           if (e.key === 'Escape') setOpen(false);
         }}
       />

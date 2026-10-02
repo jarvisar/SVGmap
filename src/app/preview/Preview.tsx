@@ -120,14 +120,51 @@ export function Preview(props: { onGenerate: () => void }) {
   const shapeKey = result ? `${result.width}x${result.height}` : '';
   useEffect(() => fitRef.current(), [shapeKey, size.w, size.h]);
 
-  // Zooms by factor, keeping the point at (px, py) on the stage still.
+  // Zooms by factor, keeping the point at (px, py) on the stage still. Wheel
+  // and gesture events can come faster than renders, so it builds on the
+  // latest box.
   const zoomAt = (px: number, py: number, factor: number) => {
-    if (!box || size.w === 0) return;
-    const w = clampWidth(box.w * factor);
-    const before = box.w / size.w;
-    const after = w / size.w;
-    setBox({ x: box.x + px * (before - after), y: box.y + py * (before - after), w });
+    if (size.w === 0) return;
+    setBox((box) => {
+      if (!box) return box;
+      const w = clampWidth(box.w * factor);
+      const before = box.w / size.w;
+      const after = w / size.w;
+      return { x: box.x + px * (before - after), y: box.y + py * (before - after), w };
+    });
   };
+  const zoomRef = useRef(zoomAt);
+  zoomRef.current = zoomAt;
+
+  // A trackpad pinch is a wheel event with ctrlKey in Chrome and Edge, and
+  // React's wheel listener is passive, so it can't stop the page zooming too.
+  // Safari sends gesture events instead.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let scale = 1;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) e.preventDefault();
+    };
+    const onGesture = (e: Event) => {
+      e.preventDefault();
+      const g = e as Event & { scale: number; clientX: number; clientY: number };
+      // On iOS a pinch is also two pointers, which zoom already.
+      if (e.type === 'gesturechange' && pointers.current.size === 0) {
+        const rect = el.getBoundingClientRect();
+        zoomRef.current(g.clientX - rect.left, g.clientY - rect.top, scale / g.scale);
+      }
+      scale = e.type === 'gesturestart' ? 1 : g.scale;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('gesturestart', onGesture);
+    el.addEventListener('gesturechange', onGesture);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', onGesture);
+      el.removeEventListener('gesturechange', onGesture);
+    };
+  }, []);
 
   const stagePoint = (e: React.PointerEvent | React.WheelEvent): Point => {
     const rect = ref.current!.getBoundingClientRect();

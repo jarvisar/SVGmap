@@ -48,16 +48,27 @@ describe('settings', () => {
     expect(merged.styles.print.background).toBe(defaults.styles.print.background);
   });
 
-  it('drops numbers that would break the map or the render', () => {
+  it('drops areas that would break the map, and clamps other numbers like the render does', () => {
     const merged = mergeSettings(defaultSettings(), {
       area: { widthM: -5, lat: 95, lon: 500 },
       plotter: { penWidth: 0 },
-      label: { size: 0 },
+      label: { size: 0, rotation: 45 },
     });
     const defaults = defaultSettings();
     expect(merged.area).toEqual(defaults.area);
-    expect(merged.plotter.penWidth).toBe(defaults.plotter.penWidth);
-    expect(merged.label.size).toBe(defaults.label.size);
+    expect(merged.plotter.penWidth).toBe(0.05);
+    expect(merged.label.size).toBe(40);
+    expect(merged.label.rotation).toBe(defaults.label.rotation);
+  });
+
+  it('keeps values typed past a slider as they were rendered', () => {
+    const settings = defaultSettings();
+    settings.label.size = 300;
+    settings.cleanup.lineSpacing = 8;
+    const reloaded = mergeSettings(defaultSettings(), JSON.parse(JSON.stringify(settings)));
+    expect(reloaded.label.size).toBe(250);
+    expect(reloaded.cleanup.lineSpacing).toBe(7.5);
+    expect(decodeSettings(encodeSettings(settings))!.label.size).toBe(250);
   });
 
   it('keeps a transparent background', () => {

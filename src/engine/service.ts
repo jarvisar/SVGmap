@@ -60,6 +60,20 @@ interface BuildingsEntry {
   entry: PreparedEntry;
 }
 
+// An Overture download in progress. A cancelled render stops waiting on it but
+// leaves it running, so changing a setting while it runs doesn't start it
+// over. It's only stopped once a render wants another area or no buildings.
+interface FootprintDownload {
+  key: string;
+  controller: AbortController;
+  entry: Promise<FootprintEntry>;
+  // The newest render waiting on it, which also gets the last progress sent.
+  onProgress: (progress: RenderProgress) => void;
+  progress?: RenderProgress;
+}
+
+const buildingsKey = (preparedKey: string) => JSON.stringify([preparedKey, 'buildings']);
+
 // Yield so a newer request can cancel this one.
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
@@ -73,6 +87,7 @@ export class RenderService {
   private readonly sources = new Map<string, TileSource>();
   private prepared: PreparedEntry | null = null;
   private footprints: FootprintEntry | null = null;
+  private download: FootprintDownload | null = null;
   private buildings: BuildingsEntry | null = null;
   private readonly fonts: FontLoader;
 
@@ -98,12 +113,12 @@ export class RenderService {
     const layout = computeLayout(settings.product, settings.border);
     const plan = planTiles(settings.area, layout, settings.source);
     const key = JSON.stringify([settings.area, layout.window, plan.zoom, settings.source.tiles]);
+    const withBuildings = settings.source.overtureBuildings && settings.layers.buildings;
+    if (!withBuildings || this.download?.key !== buildingsKey(key)) this.stopDownload();
 
     let entry = this.prepared?.key === key ? this.prepared : null;
     if (!entry || entry.value.missing) entry = await this.prepare(key, plan, layout, settings.source.tiles, entry, onProgress, isCancelled);
-    if (settings.source.overtureBuildings && settings.layers.buildings) {
-      entry = await this.addBuildings(entry, layout, onProgress, isCancelled);
-    }
+    if (withBuildings) entry = await this.addBuildings(entry, layout, onProgress, isCancelled);
 
     const label = settings.label;
     let title: LoadedFont | null = null;
@@ -130,11 +145,10 @@ export class RenderService {
     isCancelled: () => boolean,
   ): Promise<PreparedEntry> {
     const { transform } = base.value;
-    const key = JSON.stringify([base.key, 'buildings']);
+    const key = buildingsKey(base.key);
     let footprints = this.footprints?.key === key ? this.footprints : null;
     if (!footprints || (footprints.retryAt !== undefined && Date.now() >= footprints.retryAt)) {
-      footprints = await this.fetchFootprints(key, transform, layout, onProgress, isCancelled);
-      this.footprints = footprints;
+      footprints = await this.waitForFootprints(key, transform, layout, onProgress, isCancelled);
     }
     if (this.buildings?.base === base && this.buildings.footprints === footprints) return this.buildings.entry;
     const tileBuildings = base.value.polygons.filter((p) => p.layer === 'buildings');
@@ -152,12 +166,56 @@ export class RenderService {
     return entry;
   }
 
-  private async fetchFootprints(
+  private stopDownload(): void {
+    this.download?.controller.abort();
+    this.download = null;
+  }
+
+  private waitForFootprints(
     key: string,
     transform: MapTransform,
     layout: Layout,
     onProgress: (progress: RenderProgress) => void,
     isCancelled: () => boolean,
+  ): Promise<FootprintEntry> {
+    let download = this.download?.key === key ? this.download : null;
+    if (download) {
+      download.onProgress = onProgress;
+      if (download.progress) onProgress(download.progress);
+    } else {
+      this.stopDownload();
+      const started = { key, controller: new AbortController(), onProgress } as FootprintDownload;
+      const report = (progress: RenderProgress) => {
+        started.progress = progress;
+        started.onProgress(progress);
+      };
+      // Kept here rather than by the render, which may be cancelled by the time it's done.
+      started.entry = this.fetchFootprints(key, transform, layout, started.controller.signal, report).then(
+        (entry) => (this.footprints = entry),
+      );
+      const done = () => {
+        if (this.download === started) this.download = null;
+      };
+      started.entry.then(done, done);
+      this.download = download = started;
+    }
+    const { entry } = download;
+    return new Promise((resolve, reject) => {
+      const watch = setInterval(() => {
+        if (!isCancelled()) return;
+        clearInterval(watch);
+        reject(new CancelledError());
+      }, 100);
+      entry.then(resolve, reject).finally(() => clearInterval(watch));
+    });
+  }
+
+  private async fetchFootprints(
+    key: string,
+    transform: MapTransform,
+    layout: Layout,
+    signal: AbortSignal,
+    onProgress: (progress: RenderProgress) => void,
   ): Promise<FootprintEntry> {
     const none = (warning: string, retry = false): FootprintEntry => ({
       key,
@@ -172,10 +230,6 @@ export class RenderService {
     if (!bounds) return none("Buildings from Overture can't be added to a map that crosses the 180th meridian.");
     const message = 'Downloading buildings from Overture';
     onProgress({ stage: 'buildings', message, fraction: 0 });
-    const controller = new AbortController();
-    const watch = setInterval(() => {
-      if (isCancelled()) controller.abort(new CancelledError());
-    }, 100);
     // Loaded only when it's turned on: the Parquet reader is about 100 KB of the worker.
     let reader: typeof import('./data/overture.ts') | undefined;
     try {
@@ -183,13 +237,12 @@ export class RenderService {
       const data = await reader.fetchOverture({
         bounds,
         keep: (_type, props) => isMissingFromOsm(props),
-        signal: controller.signal,
+        signal,
         onProgress: (progress) => onProgress({ stage: 'buildings', message, fraction: progress.fraction }),
       });
-      if (isCancelled()) throw new CancelledError();
       return { key, footprints: projectFootprints(data.features.building, transform, windowClipRect(layout)) };
     } catch (error) {
-      if (isCancelled() || error instanceof CancelledError) throw new CancelledError();
+      if (signal.aborted || error instanceof CancelledError) throw new CancelledError();
       if (reader && error instanceof reader.OvertureTooLargeError) {
         return none(
           `Buildings from Overture were left out: this map would need ${Math.round(error.bytes / 1e6)} MB of building data, over the ${reader.MAX_BYTES / 1e6} MB limit. Try a smaller map.`,
@@ -197,8 +250,6 @@ export class RenderService {
       }
       const reason = error instanceof Error ? error.message : String(error);
       return none(`Buildings from Overture couldn't be downloaded, so the map has the tiles' buildings only. ${reason}`, true);
-    } finally {
-      clearInterval(watch);
     }
   }
 

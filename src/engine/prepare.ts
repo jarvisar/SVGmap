@@ -187,6 +187,11 @@ export function prepareArea(plan: TilePlan, layout: Layout, data: TileData): Pre
   if (missing > 0) {
     warnings.push(`${missing} map tile(s) could not be downloaded, so parts of the map may be missing.`);
   }
+  // A 404 counts as an empty tile, so a wrong path or extension in a custom
+  // source would otherwise give a blank map with no warning.
+  if (bytes === 0 && missing < plan.tiles.length) {
+    warnings.push('The map tiles for this area are all empty. Check the tile source under Map data if there should be something here.');
+  }
 
   // Stitch while still in world units, where tile edges are exact.
   stitchSeams(lines);

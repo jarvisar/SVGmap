@@ -103,26 +103,28 @@ function validString(path: string[], value: string): boolean {
   return true;
 }
 
-// The area isn't in the engine's limits, so it's checked here.
-function validNumber(path: string[], value: number): boolean {
-  if (!Number.isFinite(value)) return false;
+// The area isn't in the engine's limits, so it's checked here. Other numbers
+// are clamped like the engine does, so a value typed past a slider's range
+// comes back as what was rendered instead of the default.
+function fitSetting(path: string[], value: number): number | undefined {
+  if (!Number.isFinite(value)) return undefined;
   switch (path.join('.')) {
     case 'area.widthM':
-      return value > 0;
+      return value > 0 ? value : undefined;
     case 'area.lat':
-      return Math.abs(value) <= 85;
+      return Math.abs(value) <= 85 ? value : undefined;
     case 'area.lon':
-      return Math.abs(value) <= 180;
+      return Math.abs(value) <= 180 ? value : undefined;
     default:
-      return path[0] === 'area' || fitNumber(path, value) === value;
+      return path[0] === 'area' ? value : fitNumber(path, value);
   }
 }
 
 // Takes each value from patch only where base has a value of the same type.
 // Saved settings and share links can come from an older build or be edited by
 // hand, so anything that doesn't fit is dropped instead of breaking the app or
-// ending up in the SVG. Colours have to be #RRGGBB, and numbers have to be in
-// the range the panels offer (engine/limits.ts).
+// ending up in the SVG. Colours have to be #RRGGBB, and numbers are brought
+// into the range in engine/limits.ts.
 export function mergeSettings<T>(base: T, patch: unknown, path: string[] = []): T {
   if (patch === undefined) return base;
   if (isObject(base)) {
@@ -139,6 +141,6 @@ export function mergeSettings<T>(base: T, patch: unknown, path: string[] = []): 
     const fits = typeof base === 'string' || (base === null && nullable);
     return (fits && validString(path, patch) ? patch : base) as T;
   }
-  if (typeof patch === 'number') return (typeof base === 'number' && validNumber(path, patch) ? patch : base) as T;
+  if (typeof patch === 'number') return ((typeof base === 'number' ? fitSetting(path, patch) : undefined) ?? base) as T;
   return (typeof patch === 'boolean' && typeof base === 'boolean' ? patch : base) as T;
 }

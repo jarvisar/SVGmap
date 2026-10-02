@@ -190,7 +190,7 @@ export function App() {
             Generate
           </button>
         ) : (
-          <button type="button" className="btn btn-primary" onClick={save} disabled={!result || status !== 'done'}>
+          <button type="button" className="btn btn-primary" onClick={save} disabled={!result || status !== 'done' || key !== renderedKey}>
             Download SVG
           </button>
         )}

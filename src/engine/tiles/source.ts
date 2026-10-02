@@ -154,6 +154,7 @@ export class TileCache {
     const out = new Map<string, ArrayBuffer | null>();
     let done = 0;
     let failures = 0;
+    let lastError: unknown;
     let next = 0;
     const work = async () => {
       while (next < tiles.length && !isCancelled()) {
@@ -175,9 +176,10 @@ export class TileCache {
             const value = await pending;
             if (!this.entries.has(key)) this.remember(key, value);
             out.set(tileId, value);
-          } catch {
+          } catch (error) {
             // Left out of the result. An empty tile is null instead.
             failures++;
+            lastError = error;
           } finally {
             this.inflight.delete(key);
           }
@@ -187,7 +189,9 @@ export class TileCache {
     };
     await Promise.all(Array.from({ length: Math.min(concurrency, tiles.length) }, work));
     if (failures > 0 && failures === tiles.length) {
-      throw new Error('Could not download any map data. Check your connection, or the tile source under Map data.');
+      // The reason tells a style URL or a missing API key apart from being offline.
+      const reason = lastError instanceof Error ? lastError.message : String(lastError);
+      throw new Error(`Could not download any map data. Check your connection, or the tile source under Map data. Last error: ${reason}`);
     }
     return out;
   }

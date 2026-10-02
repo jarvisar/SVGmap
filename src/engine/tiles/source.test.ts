@@ -82,4 +82,24 @@ describe('render service', () => {
     expect(requested).toEqual([]);
     expect(tiles).toBeGreaterThan(1);
   });
+
+  it('says why no map data could be downloaded', async () => {
+    const settings = defaultRenderSettings('laser');
+    // A MapLibre style pasted in place of TileJSON.
+    settings.source = { ...settings.source, tiles: 'https://tiles.test/styles/liberty' };
+    settings.label = { ...settings.label, enabled: false };
+    vi.stubGlobal('fetch', async () => Response.json({ version: 8, sources: {}, layers: [] }));
+    const render = new RenderService(async () => new ArrayBuffer(0)).render({ settings });
+    await expect(render).rejects.toThrow(/Could not download any map data.*Last error: The tile source is not a TileJSON document/);
+  });
+
+  it('warns when every tile is empty', async () => {
+    const settings = defaultRenderSettings('laser');
+    settings.source = { ...settings.source, tiles: TEMPLATE };
+    settings.label = { ...settings.label, enabled: false };
+    // A wrong path or extension.
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 404 }));
+    const result = await new RenderService(async () => new ArrayBuffer(0)).render({ settings });
+    expect(result.warnings).toEqual([expect.stringMatching(/tiles for this area are all empty/)]);
+  });
 });
