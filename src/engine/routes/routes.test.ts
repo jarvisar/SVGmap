@@ -260,6 +260,13 @@ describe('fitting the map to a route', () => {
     expect(onPiece(area).every((p) => p[1] < band[1])).toBe(true);
   });
 
+  it('goes under a title that covers most of the window instead of squeezing beside it', () => {
+    const big: [number, number, number, number] = [window.x + 8, window.y + 8, window.w - 16, window.h - 16];
+    const free = fitArea(route, { window, avoid: null, bearing: 0, rotate: false, margin: 3 })!;
+    const area = fitArea(route, { window, avoid: big, bearing: 0, rotate: false, margin: 3 })!;
+    expect(area.widthM).toBeCloseTo(free.widthM, 0);
+  });
+
   it('turns the map when that shows the route a lot bigger', () => {
     // North to south, on a landscape piece.
     const northSouth: LonLat[][] = [

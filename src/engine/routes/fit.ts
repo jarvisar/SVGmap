@@ -26,6 +26,10 @@ const MIN_WIDTH_M = 100;
 const ROTATE_GAIN = 1.1;
 // Then the straightest angle this close to the best one wins.
 const ROTATE_SLACK = 1.03;
+// Beside the title has to keep the route at least this big compared to the
+// whole window. A title that covers most of it, like big letters, would
+// otherwise squeeze the route into a strip along the edge.
+const BESIDE_TITLE = 0.6;
 
 interface Region {
   centre: Point;
@@ -172,13 +176,15 @@ export function fitArea(lines: readonly LonLat[][], options: FitOptions): AreaSp
     const tried = parts
       .map((r) => ({ bearing, region: r, centre, k: largestScale(turned, centre, r) }))
       .sort((a, b) => b.k - a.k);
+    const whole = tried.find((p) => p.region.whole);
     // The whole window only counts if the route stays out of the title there.
     for (const p of tried) {
       if (fixedK !== null && p.k < fixedK) continue;
       if (p.region.whole && underTitle(p, fixedK ?? p.k)) continue;
+      if (!p.region.whole && fixedK === null && whole && p.k < whole.k * BESIDE_TITLE) continue;
       return p;
     }
-    return tried.find((p) => p.region.whole) ?? tried[0] ?? null;
+    return whole ?? tried[0] ?? null;
   };
 
   let best: Placement | null = null;
