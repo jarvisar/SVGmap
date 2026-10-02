@@ -160,7 +160,10 @@ export function App() {
         >
           Settings
         </button>
-        <h1 className="brand">SVGmap</h1>
+        <h1 className="brand">
+          <img className="logo" src="favicon.svg" width="20" height="20" alt="" />
+          SVGmap
+        </h1>
         <nav className="tabs">
           <button type="button" className={view === 'map' ? 'tab active' : 'tab'} onClick={() => setView('map')}>
             Map

@@ -20,8 +20,8 @@ export default defineConfig({
         name: 'SVGmap',
         short_name: 'SVGmap',
         description: 'Make SVG maps of any city from OpenStreetMap data for laser engraving, pen plotters and print.',
-        theme_color: '#2b7bd6',
-        background_color: '#ffffff',
+        theme_color: '#36383d',
+        background_color: '#e4e4e4',
         display: 'standalone',
         categories: ['design', 'utilities'],
         icons: [

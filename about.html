@@ -12,7 +12,8 @@
     <link rel="icon" href="./favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" sizes="any" />
     <link rel="apple-touch-icon" href="./apple-touch-icon-180x180.png" />
-    <meta name="theme-color" content="#2b7bd6" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#36383d" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="SVGmap" />
@@ -36,64 +37,132 @@
     </script>
 
     <style>
+      /* Same colours and look as the app, see src/app/styles.css */
       :root {
-        --text: #222;
-        --muted: #6f6f6f;
-        --line: #e4e4e4;
-        --accent: #2b7bd6;
-        --accent-dark: #1f65b8;
-        --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        color-scheme: light;
+        --font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        --bg: #e4e4e4;
+        --surface: #ffffff;
+        --border: #d6d6d6;
+        --border-strong: #b5b5b5;
+        --text: #333333;
+        --text-3: #777777;
+        --emboss: 0 1px 0 rgb(255 255 255 / 0.85);
+        --link: #2470c6;
+        --link-hover: #1a548f;
+        --btn-1: #ffffff;
+        --btn-2: #e5e5e5;
+        --btn-border: #c2c2c2;
+        --btn-border-bottom: #a6a6a6;
+        --header-1: #45484e;
+        --header-2: #2a2c30;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --bg: #19191b;
+          --surface: #2b2c2f;
+          --border: #1b1c1e;
+          --border-strong: #111213;
+          --text: #e3e3e3;
+          --text-3: #979797;
+          --emboss: 0 -1px 0 rgb(0 0 0 / 0.6);
+          --link: #74aee9;
+          --link-hover: #a0c8f2;
+          --btn-1: #4a4b50;
+          --btn-2: #3a3b3f;
+          --btn-border: #1d1e20;
+          --btn-border-bottom: #121314;
+          --header-1: #2f3034;
+          --header-2: #1d1e21;
+        }
       }
       * {
         box-sizing: border-box;
       }
       body {
         margin: 0;
-        font: 16px/1.6 var(--font);
+        font: 14px/1.6 var(--font);
         color: var(--text);
-        background: #fff;
-        -webkit-font-smoothing: antialiased;
+        background: var(--bg);
       }
       a {
-        color: var(--accent);
+        color: var(--link);
+      }
+      a:hover {
+        color: var(--link-hover);
       }
       header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        height: 48px;
-        padding: 0 16px;
-        border-bottom: 1px solid var(--line);
+        height: 44px;
+        padding: 0 8px 0 12px;
+        border-bottom: 1px solid #000;
+        background: linear-gradient(var(--header-1), var(--header-2));
+        box-shadow:
+          inset 0 1px 0 rgb(255 255 255 / 0.1),
+          0 1px 3px rgb(0 0 0 / 0.25);
       }
       .brand {
-        font-weight: 600;
-        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #fff;
+        font-size: 16px;
+        font-weight: bold;
+        letter-spacing: -0.01em;
+        text-shadow: 0 -1px 0 #000;
         text-decoration: none;
+      }
+      .brand:hover {
+        color: #fff;
+      }
+      .brand img {
+        border-radius: 2px;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
       }
       .open {
-        padding: 6px 14px;
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 12px;
+        border: 1px solid #0f2a4d;
         border-radius: 3px;
-        background: var(--accent);
+        background: linear-gradient(#2a74c8, #1c5aa5);
+        box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25);
         color: #fff;
-        font-size: 14px;
+        font-size: 12px;
+        font-weight: bold;
         text-decoration: none;
+        text-shadow: 0 -1px 0 rgb(0 0 0 / 0.3);
+        white-space: nowrap;
       }
       .open:hover {
-        background: var(--accent-dark);
+        background: linear-gradient(#3b7fcd, #1c5aa5);
+        color: #fff;
       }
       main {
         max-width: 760px;
-        margin: 0 auto;
-        padding: 24px 16px 48px;
+        margin: 24px auto 48px;
+        padding: 8px 32px 24px;
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        background: var(--surface);
+        box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
       }
       h1 {
-        font-size: 28px;
+        font-size: 26px;
         line-height: 1.25;
         margin: 16px 0;
+        text-shadow: var(--emboss);
       }
       h2 {
-        font-size: 20px;
-        margin: 36px 0 8px;
+        font-size: 18px;
+        margin: 32px 0 8px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--border);
+        text-shadow: var(--emboss);
       }
       li {
         margin: 4px 0;
@@ -101,36 +170,51 @@
       figure {
         margin: 24px 0;
       }
-      img {
+      figure img {
         display: block;
         width: 100%;
         height: auto;
-        border: 1px solid var(--line);
+        border: 1px solid var(--border-strong);
+        box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
       }
       figcaption,
       footer {
-        color: var(--muted);
-        font-size: 14px;
+        color: var(--text-3);
+        font-size: 12px;
       }
       figcaption {
-        margin-top: 6px;
+        margin-top: 8px;
       }
+      /* Button names, drawn like the buttons */
       code {
-        font-size: 14px;
-        padding: 1px 4px;
+        display: inline-block;
+        padding: 0 6px;
+        border: 1px solid var(--btn-border);
+        border-bottom-color: var(--btn-border-bottom);
         border-radius: 3px;
-        background: #f2f2f2;
+        background: linear-gradient(var(--btn-1), var(--btn-2));
+        font: bold 12px/18px var(--font);
+        text-shadow: var(--emboss);
+        white-space: nowrap;
       }
       footer {
-        margin-top: 48px;
-        padding-top: 16px;
-        border-top: 1px solid var(--line);
+        margin-top: 40px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+      }
+      @media (max-width: 800px) {
+        main {
+          margin: 0;
+          padding: 8px 16px 24px;
+          border-width: 0 0 1px;
+          border-radius: 0;
+        }
       }
     </style>
   </head>
   <body>
     <header>
-      <a class="brand" href="./">SVGmap</a>
+      <a class="brand" href="./"><img src="/favicon.svg" width="20" height="20" alt="" />SVGmap</a>
       <a class="open" href="./">Open SVGmap</a>
     </header>
     <main>

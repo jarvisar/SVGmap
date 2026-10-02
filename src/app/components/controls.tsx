@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useState } from 'react';
+import { type CSSProperties, type ReactNode, useEffect, useId, useState } from 'react';
 
 export function Section(props: { title: string; summary?: string; defaultOpen?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(props.defaultOpen ?? false);
@@ -128,11 +128,13 @@ export function Slider(props: {
   hint?: ReactNode;
 }) {
   const scale = props.scale ?? 1;
+  const progress = Math.min(100, Math.max(0, ((props.value * scale - props.min) / (props.max - props.min)) * 100));
   return (
     <Field label={props.label} hint={props.hint}>
       <div className="slider">
         <input
           type="range"
+          style={{ '--progress': `${progress}%` } as CSSProperties}
           aria-label={props.label}
           min={props.min}
           max={props.max}
