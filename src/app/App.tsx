@@ -80,6 +80,7 @@ const Sidebar = memo(function Sidebar() {
         Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, tiles by{' '}
         <a href="https://openfreemap.org">OpenFreeMap</a> and <a href="https://openmaptiles.org">OpenMapTiles</a>, search by{' '}
         <a href="https://photon.komoot.io">Photon</a>. Credit OpenStreetMap on anything you publish or sell.
+        <p className="made-by">Made by Team Jarvis.</p>
         <div className="sidebar-links">
           <a href="about">About</a>
           <a href="https://github.com/jarvisar/SVGmap">Source on GitHub</a>

@@ -1030,6 +1030,10 @@ button.menu-toggle,
   color: var(--text-3);
 }
 
+.made-by {
+  margin: 8px 0 0;
+}
+
 .sidebar-links {
   display: flex;
   gap: 16px;
