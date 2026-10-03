@@ -17,7 +17,7 @@ import { useApp } from './store.ts';
 import { asChange } from './undo.ts';
 
 export const ROUTE_ACCEPT = '.gpx,.kml,.kmz,.tcx,.geojson,.json';
-const MAX_ROUTES = 50;
+export const MAX_ROUTES = 50;
 
 export interface ImportResult {
   added: string[];
@@ -43,6 +43,25 @@ export function importRouteFiles(files: Iterable<File>): Promise<ImportResult> {
   const run = importing.then(() => importFiles(list));
   importing = run.catch(() => {});
   return run;
+}
+
+// Real routes snapped to OpenStreetMap, sized to fit the default plaque at 1:20,000
+// with room for the title.
+export const SAMPLE_ROUTES = [
+  { file: 'chicago-riverwalk.gpx', name: 'Chicago Riverwalk (7 km)' },
+  { file: 'brooklyn-bridge-loop.gpx', name: 'Brooklyn Bridge Loop (5.4 km)' },
+  { file: 'lombard-coit-tower.gpx', name: 'Lombard & Coit Tower (6.7 km)' },
+];
+
+export async function importSampleRoute(file: string): Promise<ImportResult> {
+  try {
+    const res = await fetch(new URL(`routes/${file}`, new URL(import.meta.env.BASE_URL, document.baseURI)));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return importRouteFiles([new File([await res.arrayBuffer()], file)]);
+  } catch (error) {
+    console.error(error);
+    return { added: [], errors: [`${file}: the sample couldn't be loaded. Check your connection.`] };
+  }
 }
 
 async function importFiles(files: File[]): Promise<ImportResult> {

@@ -14,7 +14,7 @@ Search for a place or pick one of the example cities. To map a run or ride, impo
 
 Click `Generate` to build the SVG. The preview updates as you change settings. Scroll or pinch to zoom the preview and drag to move it. Double-click it or click `Fit` to see the whole piece again. Click `Download SVG` to save the file, or `Share` to copy a link with your settings. `Export` has the other formats and options. See Export below.
 
-Click the title on the map or in the preview to move it or resize it. See Title Styles below. `Pick roads` in the preview picks out roads for a route of their own colour, or leaves them out. See Picking Roads below.
+Click the title on the map or in the preview to move it or resize it. See Title Styles below. `Pick roads` in the preview picks out roads for a route of their own colour, or leaves them out. See Picking Roads below. `Edit route` moves a route's points onto the roads, trims it or draws a new one. See Editing Routes below.
 
 Use `Ctrl+Z` to undo a change and `Ctrl+Y` or `Ctrl+Shift+Z` to redo it (`Cmd` on a Mac), or the arrows in the top bar. On a phone, the arrows and `Share link` are at the top of `Settings`. A drag, a pulled slider or typing in one field undoes as one step. Typing in a field keeps its own undo until you click away from it.
 
@@ -23,7 +23,7 @@ Settings are saved in the browser. `Reset settings` at the bottom of the sidebar
 The settings are:
 
 * Location sets the area. Map width and scale are two ways of saying the same thing.
-* Routes adds runs, rides and other routes from GPX and similar files. See below.
+* Routes adds runs, rides and other routes from GPX and similar files, or draws them. See below.
 * Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border and its colours.
 * Output switches between laser, plotter and print.
 * Layers turns each kind of feature on or off, sets its colour and how filled areas are drawn (fill, outline, hatching or contours). The footpath options can skip sidewalks and crossings. See below.
@@ -121,6 +121,8 @@ A road is never removed in favour of a less important one. The preview shows how
 
 Import a route under Routes, or drop the file anywhere on the page. GPX, KML, KMZ, TCX and GeoJSON files work, so an activity or route exported from Strava, Garmin Connect, Komoot or Google My Maps can go straight in. Every line in the file becomes part of one route and waypoints are skipped. Pieces of a track less than 500 m apart are joined, since watches start a new piece after a pause.
 
+To try it without a file of your own, pick one of the samples under Routes: a 7 km loop along the Chicago Riverwalk, a 5.4 km loop over the Brooklyn and Manhattan Bridges, or a 6.7 km loop in San Francisco down the crooked part of Lombard Street and up to Coit Tower. Each one fits the default plaque at 1:20,000 with room for the title. The files are in `public/routes` and were made by snapping waypoints to OpenStreetMap roads and paths.
+
 The map moves to fit the routes when they're added, and `Fit map` does it again. `Fit and rotate` also turns the map when that shows the route at least 10% bigger. Both keep the route out from under the title if there's room beside it. With the scale locked they only move the map.
 
 Each mode draws the route on its own layer in its own colour. Laser engraves it as a band by default, or it can be outlined, hatched or a single scored line. Plotter fills the band with pen passes along the route, in its own pen. Print draws a coloured line. The start gets a dot and the finish a bar across the route. A loop only gets the dot.
@@ -128,6 +130,27 @@ Each mode draws the route on its own layer in its own colour. Laser engraves it 
 The route never goes through the line cleanup. The map gives way to it instead. Streets, paths, railways and areas closer than `Gap around it` are left out, along with leftover bits that run alongside the route or are too short to read. That way nothing is scored again inside an engraved band.
 
 Routes are simplified to within a metre when they're imported and saved with the settings, so they're kept after a reload and included in share links.
+
+## Editing Routes
+
+Click `Edit route` above the preview, or `Edit in preview` under Routes. The route is drawn in blue with handles on the points that hold its shape. A recorded track has a point every few metres, so the handles are spaced out for the zoom. Zoom in to get more of them.
+
+* Drag a handle to move it. Drag the line to add a handle there.
+* With `Follow roads` on, a dragged handle snaps to the nearest road or path and the route goes along the roads to the handles either side. Away from the roads, or holding `Alt`, it joins them with straight lines. With it off, the points out to the next handles bend along with it, which keeps the shape of the track.
+* `Snap distance` sets how far from a road a point can be and still snap to it, 5 to 100 m (30 m to start with). Raise it for a wobbly track. Lower it where a path runs right beside a road, so the route doesn't jump to the wrong one. It also sets how far `Snap to roads` looks.
+* Double-click a handle, or select it and press `Delete`, to take it out.
+* Click a handle to select it. `Pick a section` and then a second handle, or Shift-click it, selects the stretch between them. A section can be snapped to the roads, straightened or cut out. Cutting out the middle leaves a gap, and at an end it trims the route.
+* `Snap to roads` under Whole route moves the whole route onto the roads it runs along, the way Strava or Garmin match a GPS track to the map. Stretches away from any road, like across a park or a beach, keep their own points.
+* `Trim start` and `Trim finish` take a distance off either end, to hide where a run starts from home.
+* `Reverse` swaps the start and the finish, and `Back to start` joins the finish back to the start.
+
+`Draw` adds to the route by clicking. Each click carries it on from the finish, along the roads with `Follow roads` on. Select the first point to add to the start instead. Pick `New route…` from the list at the top of the card, or click `Draw a route` under Routes, to start one from scratch.
+
+From the keyboard, `,` and `.` step through the handles and `Home` and `End` go to the ends. Hold `Shift` to pick a section. The arrow keys nudge the selected point (`Shift` for 5 mm), `S` snaps it to the nearest road and `Delete` removes it. `F` turns Follow roads on and off, `D` picks Draw and `Esc` backs out one step at a time.
+
+Every edit is one step for undo. `Undo all changes` puts the route back the way it was when you first edited it since opening the page.
+
+###### Note: Following and snapping use the roads and paths in the preview, so they only work inside the map and with Roads or Paths on under Layers. They don't know about one-way streets or turn restrictions, which is fine for a run or a ride but not for a drive.
 
 ## Picking Roads
 

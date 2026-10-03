@@ -35,8 +35,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // The app plus the title fonts, so it opens and draws titles offline.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,ttf,json}'],
+        // The app plus the title fonts and sample routes, so it opens and draws titles offline.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,ttf,json,gpx}'],
         globIgnores: ['preview.png'],
         // Control the first visit right away so its tiles get cached too. Updates
         // still wait for the prompt.

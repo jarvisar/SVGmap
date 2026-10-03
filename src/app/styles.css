@@ -989,6 +989,15 @@ button.menu-toggle,
   margin-top: 8px;
 }
 
+.route-buttons {
+  margin-top: 0;
+}
+
+.route-edit-button {
+  width: 100%;
+  margin-top: 8px;
+}
+
 .route-fit .btn {
   flex: 1;
 }
@@ -1382,6 +1391,39 @@ button.menu-toggle,
 .preview-toolbar .button-group .btn {
   min-width: 30px;
   height: 26px;
+}
+
+/* Four tools and the zoom buttons don't fit across a phone. Pinching zooms
+   there anyway, so the + and - buttons go and the rest wraps if it has to. */
+@media (max-width: 800px) {
+  .preview-toolbar {
+    left: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .preview-toolbar .preview-look {
+    max-width: 84px;
+  }
+}
+
+/* Under 380px the toolbar still takes two rows, so the pin tools go below it. */
+@media (max-width: 380px) {
+  .preview-stage .mark-palette {
+    top: 82px;
+  }
+}
+
+@media (pointer: coarse) {
+  .preview-toolbar .zoom-step {
+    display: none;
+  }
+
+  .preview-toolbar .button-group .btn:last-child {
+    border-radius: var(--radius);
+  }
 }
 
 .preview-empty {
@@ -2081,6 +2123,126 @@ button.menu-toggle,
     grid-auto-columns: 30px;
     overflow-x: auto;
   }
+}
+
+/* Editing routes in the preview. Strokes stay the same on screen at any zoom. */
+.route-edit path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.route-edit-other {
+  stroke: #6b7280;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  opacity: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.route-edit-casing {
+  stroke: #fff;
+  stroke-width: 5;
+  opacity: 0.9;
+  vector-effect: non-scaling-stroke;
+}
+
+.route-edit-line {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Orange stands out from the blue line on wood and in colour themes alike. */
+.route-edit-section {
+  stroke: #e8590c;
+  stroke-width: 5;
+  opacity: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.route-edit-draw {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.route-handle {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.route-handle.hover {
+  stroke-width: 2.5;
+}
+
+.route-handle-end {
+  stroke-width: 2;
+}
+
+.route-handle.selected,
+.route-handle.dragged {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+/* Green with a thicker ring, so it doesn't rely on colour alone. */
+.route-handle.snapped {
+  fill: #2f9e44;
+  stroke-width: 3;
+}
+
+.route-ghost circle {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  opacity: 0.85;
+  vector-effect: non-scaling-stroke;
+}
+
+.route-ghost path {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.route-card-part {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.route-card .segmented {
+  flex: 1;
+}
+
+.route-card-wait {
+  flex: 1;
+  color: var(--text);
+  font-weight: bold;
+}
+
+.preview-card-note.route-card-inline {
+  margin: 0;
+}
+
+.route-trim .input-unit {
+  flex: none;
+  width: 84px;
+}
+
+/* Read out, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Placeholders under the subtitle and pin text */

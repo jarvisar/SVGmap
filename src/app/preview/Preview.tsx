@@ -13,9 +13,11 @@ import { MARK_REACH_PX, type MarkDrag, type MarkGrip, type PlacedMark, cornerCur
 import { addMark, duplicateMark, markTransform, nudgeMark, removeMark, selectMark, setEditing, setTool, startingMark, updateMark, useMarkUi } from '../marks.ts';
 import { usePlaceholderValues } from '../placeholders.ts';
 import { useRender } from '../render.ts';
+import { setRouteEditing, useRouteEdit } from '../routeEdit.ts';
 import { type PreviewLook, useApp } from '../store.ts';
 import { MarkCard, MarkDrawing, MarkFrames, MarkPalette, TOOL_KEYS } from './MarkTools.tsx';
 import { MATERIALS, type MaterialId, groupPaint, previewBackground, previewMarkInk } from './paint.ts';
+import { useRouteEditor } from './RouteEditor.tsx';
 import { PickIndex, PickOverlay, RoadRouteCard } from './RoutePicker.tsx';
 import { TitleCard, TitleFrame, TitleGhost } from './TitleTools.tsx';
 
@@ -40,15 +42,17 @@ const DRAG_START_PX = 4;
 const isTitle = (element: string) => element === 'text' || element === 'subtitle' || element === 'frame';
 
 // hideTitle leaves the title out while a moved one is drawn over the result,
-// and hideMarks the pins and text while they're drawn from the settings.
-const PreviewContent = memo(function PreviewContent(props: { result: RenderResult; look: PreviewLook; hideTitle: boolean; hideMarks: boolean }) {
-  const { result, look, hideTitle, hideMarks } = props;
+// hideMarks the pins and text while they're drawn from the settings, and
+// hideRoute the routes while the route editor draws them.
+const PreviewContent = memo(function PreviewContent(props: { result: RenderResult; look: PreviewLook; hideTitle: boolean; hideMarks: boolean; hideRoute: boolean }) {
+  const { result, look, hideTitle, hideMarks, hideRoute } = props;
   return (
     <g>
       <path d={result.outline} fill={previewBackground(result, look)} />
       {result.groups.map((group) => {
         if (hideTitle && isTitle(group.element)) return null;
         if (hideMarks && group.element === 'mark') return null;
+        if (hideRoute && group.element === 'route') return null;
         const paint = groupPaint(group, result, look);
         return (
           <g key={group.id} {...paint} strokeLinecap="round" strokeLinejoin="round">
@@ -141,6 +145,10 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   }, [props.upToDate, result, placing]);
   const ghost = (dragged !== null || placing) && title.artwork !== null && layout !== null;
   const unit = box && size.w > 0 ? box.w / size.w : 1;
+
+  // Editing routes. The editor gets presses on the route before anything else.
+  const routeEditing = useRouteEdit((s) => s.editing) && !picking;
+  const routeEditor = useRouteEditor(routeEditing, unit, result);
 
   // Pins and text. Like the title, they're laid out here to be dragged. While
   // the result is behind the settings they're drawn from the settings, so a
@@ -251,7 +259,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     };
   }, []);
 
-  const stagePoint = (e: React.PointerEvent | React.WheelEvent): Point => {
+  const stagePoint = (e: React.MouseEvent | React.WheelEvent): Point => {
     const rect = ref.current!.getBoundingClientRect();
     return [e.clientX - rect.left, e.clientY - rect.top];
   };
@@ -277,7 +285,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   // text can only be found while editing, where its outline shows.
   const markGripAt = (point: Point): { id: string; grip: MarkGrip } | null => {
     const at = pieceAt(point);
-    if (!at || picking || tool) return null;
+    if (!at || picking || tool || routeEditing) return null;
     if (selectedPlaced) {
       const handle = markHandleAt(markSpots, [at.x, at.y], HANDLE_REACH * at.k);
       if (handle) return { id: selectedPlaced.mark.id, grip: handle };
@@ -313,10 +321,17 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     const point = stagePoint(e);
     pointers.current.set(e.pointerId, point);
     pressed.current = pointers.current.size === 1 ? { point, moved: false } : null;
+    // A second finger puts back whatever the first was dragging and pinches instead.
+    if (pointers.current.size > 1) routeEditor.cancel();
     if (titleGrab.current || markGrab.current) {
-      // A second finger puts the title or mark back and pinches instead.
       cancelTitleDrag();
       cancelMarkDrag();
+    } else if (pointers.current.size === 1 && routeEditing && e.button === 0) {
+      const at = pieceAt(point);
+      if (at && routeEditor.down([at.x, at.y], e)) {
+        pressed.current = null;
+        return;
+      }
     } else if (pointers.current.size === 1 && !picking && e.button === 0) {
       // Marks are drawn over the title, so they come first.
       const markGrip = markGripAt(point);
@@ -339,6 +354,15 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     restart();
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (routeEditing) {
+      const point = stagePoint(e);
+      const at = pieceAt(point);
+      if (at && routeEditor.move([at.x, at.y], e)) {
+        pointers.current.set(e.pointerId, point);
+        return;
+      }
+      if (!pointers.current.size) routeEditor.hover(at ? [at.x, at.y] : null, e.altKey);
+    }
     const held = markGrab.current;
     if (held && held.pointerId === e.pointerId) {
       const point = stagePoint(e);
@@ -365,7 +389,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
       setDragged(grab.to);
       return;
     }
-    if (!picking && !pointers.current.size) {
+    if (!picking && !routeEditing && !pointers.current.size) {
       const markGrip = markGripAt(stagePoint(e));
       const grip = markGrip || tool ? null : gripAt(stagePoint(e));
       setHoverMark(markGrip?.id ?? null);
@@ -391,6 +415,11 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   };
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId);
+    if (routeEditing && routeEditor.up(e)) {
+      pressed.current = null;
+      restart();
+      return;
+    }
     const held = markGrab.current;
     if (held && held.pointerId === e.pointerId) {
       markGrab.current = null;
@@ -423,7 +452,9 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     // or a mark lets go of it.
     if (!picking && press && !press.moved && e.type !== 'pointercancel') {
       const at = pieceAt(press.point);
-      if (tool && at) {
+      if (routeEditing) {
+        if (at) routeEditor.click([at.x, at.y], e);
+      } else if (tool && at) {
         addMark(startingMark(tool), [at.x, at.y], tool === 'none');
         setTool(null);
       } else {
@@ -473,7 +504,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     return false;
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (onMarkKey(e)) {
+    if (routeEditor.key(e) || onMarkKey(e)) {
       e.preventDefault();
       return;
     }
@@ -523,24 +554,29 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   const canGrab = draggable && title.artwork !== null;
   const tap = COARSE ? 'Tap' : 'Click';
   let hint: string | null = null;
-  if (picking) hint = COARSE ? 'Tap roads to pick them, tap again to drop one' : 'Click roads to pick them, click again to drop one, Esc clears';
+  if (routeEditing) hint = routeEditor.hint;
+  else if (picking) hint = COARSE ? 'Tap roads to pick them, tap again to drop one' : 'Click roads to pick them, click again to drop one, Esc clears';
   else if (tool) hint = `${tap} the map to put down ${tool === 'none' ? 'text' : `a ${MARK_SHAPES[tool].name.toLowerCase()}`}. Esc to stop.`;
   else if (selectedMark) hint = 'Drag to move, corners to resize, the round handle to turn';
   else if (titleSelected) hint = `Drag the handles to resize the title. ${tap} the map to let go.`;
   else if (editing) hint = `Pick a tool, or ${tap.toLowerCase()} a pin or text to change it`;
   else if (canGrab) hint = `${tap} the title to move or resize it`;
   const markCard = !picking && (editing || selectedMark !== null);
-  const card = picking || markCard || (titleSelected && title.artwork !== null);
+  const card = routeEditing || picking || markCard || (titleSelected && title.artwork !== null);
   const titleInk = styles[result.mode].colors.text;
   return (
     <div className={card ? 'preview-stage has-card' : 'preview-stage'} ref={ref}>
       <div
         className={dragging ? 'preview dragging' : 'preview'}
-        style={{ cursor: titleGrab.current?.cursor ?? markGrab.current?.cursor ?? (picking || tool ? 'crosshair' : (hoverCursor ?? undefined)) }}
+        style={{
+          cursor: routeEditing ? (routeEditor.cursor ?? undefined) : (titleGrab.current?.cursor ?? markGrab.current?.cursor ?? (picking || tool ? 'crosshair' : (hoverCursor ?? undefined))),
+        }}
         role="img"
         tabIndex={0}
         aria-label={
-          selectedMark
+          routeEditing && routeEditor.label
+            ? routeEditor.label
+            : selectedMark
             ? `Preview of the SVG map with ${selectedMark.text.trim() ? `“${selectedMark.text.trim()}”` : MARK_SHAPES[selectedMark.shape].name.toLowerCase()} selected. Arrow keys move it, R turns it, square brackets resize it, Delete removes it, Escape lets go.`
             : `Preview of the SVG map, ${result.width.toFixed(1)} by ${result.height.toFixed(1)} mm. Arrow keys move it, plus and minus zoom, 0 fits it.`
         }
@@ -551,15 +587,21 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onPointerLeave={() => {
+          routeEditor.hover(null, false);
           setHoverCursor(null);
           setHoverTitle(false);
           setHoverMark(null);
         }}
-        onDoubleClick={fit}
+        onDoubleClick={(e) => {
+          // Double-clicking a route point deletes it.
+          const at = routeEditing ? pieceAt(stagePoint(e)) : null;
+          if (at && routeEditor.doubleClick([at.x, at.y])) return;
+          fit();
+        }}
       >
         {box ? (
           <svg viewBox={`${box.x} ${box.y} ${box.w} ${h}`} preserveAspectRatio="xMidYMid meet">
-            <PreviewContent result={result} look={look} hideTitle={ghost} hideMarks={ghostMarks} />
+            <PreviewContent result={result} look={look} hideTitle={ghost} hideMarks={ghostMarks} hideRoute={routeEditing} />
             {ghost && title.artwork && layout ? <TitleGhost artwork={title.artwork} result={result} look={look} layout={layout} /> : null}
             {ghostMarks && layout ? (
               <MarkDrawing
@@ -577,6 +619,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
             {!picking && title.artwork && canGrab && (titleSelected || hoverTitle) ? (
               <TitleFrame artwork={title.artwork} label={shown} handles={handles} selected={titleSelected} unit={unit} />
             ) : null}
+            {routeEditing ? routeEditor.overlay : null}
             {picking && index ? <PickOverlay index={index} selected={selected} hover={hoverLine} unit={unit} routes={roadRoutes} /> : null}
           </svg>
         ) : null}
@@ -594,6 +637,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
             setTitleSelected(false);
             setEditing(false);
             selectMark(null);
+            setRouteEditing(false);
           }}
         >
           Pick roads
@@ -608,9 +652,25 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
             if (editing) selectMark(null);
             setPicking(false);
             setTitleSelected(false);
+            setRouteEditing(false);
           }}
         >
           Pins &amp; text
+        </button>
+        <button
+          type="button"
+          className={routeEditing ? 'btn btn-small pick-toggle active' : 'btn btn-small pick-toggle'}
+          aria-pressed={routeEditing}
+          title={routeEditing ? 'Stop editing the route' : 'Move route points onto the roads, trim the ends, or draw a route'}
+          onClick={() => {
+            setRouteEditing(!routeEditing);
+            setPicking(false);
+            setEditing(false);
+            selectMark(null);
+            setTitleSelected(false);
+          }}
+        >
+          Edit route
         </button>
         {result.mode === 'laser' ? (
           <Select<PreviewLook>
@@ -625,10 +685,10 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
           />
         ) : null}
         <div className="button-group">
-          <button type="button" className="btn btn-small" aria-label="Zoom in" title="Zoom in" onClick={() => zoomAt(size.w / 2, size.h / 2, 1 / 1.5)}>
+          <button type="button" className="btn btn-small zoom-step" aria-label="Zoom in" title="Zoom in" onClick={() => zoomAt(size.w / 2, size.h / 2, 1 / 1.5)}>
             +
           </button>
-          <button type="button" className="btn btn-small" aria-label="Zoom out" title="Zoom out" onClick={() => zoomAt(size.w / 2, size.h / 2, 1.5)}>
+          <button type="button" className="btn btn-small zoom-step" aria-label="Zoom out" title="Zoom out" onClick={() => zoomAt(size.w / 2, size.h / 2, 1.5)}>
             −
           </button>
           <button type="button" className="btn btn-small" onClick={fit}>
@@ -637,7 +697,9 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
         </div>
       </div>
       {editing && !picking ? <MarkPalette tool={tool} onTool={setTool} onAdd={(shape) => addMark(startingMark(shape), undefined, shape === 'none')} /> : null}
-      {picking ? (
+      {routeEditing ? (
+        routeEditor.card
+      ) : picking ? (
         <RoadRouteCard index={index} selected={selected} onSelect={setSelected} onClose={() => setPicking(false)} />
       ) : markCard ? (
         <MarkCard marks={marks} selected={selectedMark} editing={editing} onClose={() => (selectedMark ? selectMark(null) : setEditing(false))} />

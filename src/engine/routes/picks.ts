@@ -11,6 +11,7 @@ import type { MapTransform } from '../geo/transform.ts';
 import type { Path, Point } from '../lines/geometry.ts';
 import type { PreparedLine } from '../prepare.ts';
 import type { LineLayerId } from '../settings.ts';
+import { FLAG } from '../tiles/schema.ts';
 
 export type LonLatLine = [number, number][];
 
@@ -221,6 +222,8 @@ export interface PickLines {
   /** The road route each line is drawn in, -1 left out, -2 neither. */
   owners: Int8Array;
   classes: string[];
+  /** 1 for a bridge, 2 for a tunnel, 0 on the ground. Routes only cross between levels where lines share a point. */
+  levels: Uint8Array;
   /** Where each line's points start, with the total at the end. */
   starts: Uint32Array;
   /** x, y in canvas mm. */
@@ -250,6 +253,7 @@ export function pickLines(lines: PreparedLine[], transform: MapTransform, owners
     layers: Uint8Array.from(picked, (l) => PICK_LAYERS.indexOf(l.layer)),
     owners: Int8Array.from(picked, (l) => owners.get(l) ?? -2),
     classes: picked.map((l) => l.cls),
+    levels: Uint8Array.from(picked, (l) => (l.flags & FLAG.bridge ? 1 : l.flags & FLAG.tunnel ? 2 : 0)),
     starts,
     points,
     transform: { zoom, cx, cy, wx, wy, cos, sin, mmPerUnit },

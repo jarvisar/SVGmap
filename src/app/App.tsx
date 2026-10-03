@@ -19,6 +19,7 @@ import { SizePanel } from './panels/SizePanel.tsx';
 import { TitlePanel } from './panels/TitlePanel.tsx';
 import { Preview } from './preview/Preview.tsx';
 import { renderFraction, requestRender, settingsKey, useRender } from './render.ts';
+import { useRouteEdit } from './routeEdit.ts';
 import { importRouteFiles, useImportNotice } from './routes.ts';
 import { toRenderSettings } from './settings.ts';
 import { settingsFromUrl, shareUrl } from './share.ts';
@@ -158,6 +159,11 @@ export function App() {
   const flashText = useFlash((s) => s.text);
   const [dropping, setDropping] = useState(false);
   const dropTimer = useRef(0);
+  // On a phone the drawer would cover the route editor when it's opened from the sidebar.
+  const routeEditorOpened = useRouteEdit((s) => s.opened);
+  useEffect(() => {
+    if (routeEditorOpened) setMenuOpen(false);
+  }, [routeEditorOpened]);
 
   // A route file dropped anywhere on the page. dragleave fires for every child
   // the pointer crosses, so the overlay goes when dragover stops coming instead.

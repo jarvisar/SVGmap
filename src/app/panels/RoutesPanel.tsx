@@ -4,7 +4,17 @@ import { computeLayout } from '../../engine/layout/layout.ts';
 import { decodeRoute, routeLengthM } from '../../engine/routes/route.ts';
 import type { OutputMode, RouteData, RouteDraw } from '../../engine/settings.ts';
 import { Check, ColorInput, Field, NumberField, Section, Select } from '../components/controls.tsx';
-import { ROUTE_ACCEPT, fitMapToRoutes, importRouteFiles, shareOutside, visibleRouteLines } from '../routes.ts';
+import {
+  type ImportResult,
+  ROUTE_ACCEPT,
+  SAMPLE_ROUTES,
+  fitMapToRoutes,
+  importRouteFiles,
+  importSampleRoute,
+  shareOutside,
+  visibleRouteLines,
+} from '../routes.ts';
+import { setRouteEditing, startDrawing } from '../routeEdit.ts';
 import { useApp } from '../store.ts';
 import { HatchOptions, hatchOptionsFor } from './LayersPanel.tsx';
 
@@ -65,6 +75,7 @@ export function RoutesPanel() {
   const border = useApp((s) => s.border);
   const setRoutes = useApp((s) => s.setRoutes);
   const setStyle = useApp((s) => s.setStyle);
+  const setView = useApp((s) => s.setView);
   const fileInput = useRef<HTMLInputElement>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -79,15 +90,15 @@ export function RoutesPanel() {
   }, [product, border]);
   const outside = lines.length && layout ? shareOutside(lines, area, layout) : 0;
 
-  const onFiles = async (files: File[]) => {
-    if (!files.length) return;
+  const runImport = async (run: () => Promise<ImportResult>) => {
     setBusy(true);
     try {
-      setErrors((await importRouteFiles(files)).errors);
+      setErrors((await run()).errors);
     } finally {
       setBusy(false);
     }
   };
+  const onFiles = (files: File[]) => (files.length ? runImport(() => importRouteFiles(files)) : undefined);
   const fit = (rotate: boolean) => void fitMapToRoutes(rotate);
 
   const count = routes.items.length;
@@ -98,9 +109,22 @@ export function RoutesPanel() {
 
   return (
     <Section title="Routes" summary={summary}>
-      <button type="button" className="btn btn-small" disabled={busy} onClick={() => fileInput.current?.click()}>
-        {busy ? 'Reading…' : 'Import route'}
-      </button>
+      <div className="button-row route-buttons">
+        <button type="button" className="btn btn-small" disabled={busy} onClick={() => fileInput.current?.click()}>
+          {busy ? 'Reading…' : 'Import route'}
+        </button>
+        <button
+          type="button"
+          className="btn btn-small"
+          title="Click along a route in the preview. It can follow the roads between clicks."
+          onClick={() => {
+            setView('preview');
+            startDrawing();
+          }}
+        >
+          Draw a route
+        </button>
+      </div>
       <input
         ref={fileInput}
         type="file"
@@ -117,6 +141,14 @@ export function RoutesPanel() {
         GPX, KML, KMZ, TCX or GeoJSON, like an activity or route exported from Strava, Garmin, Komoot or Google My Maps. You can
         also drop files onto the page.
       </div>
+      <Field label="Samples">
+        <Select
+          value=""
+          label="Samples"
+          options={[{ value: '', label: busy ? 'Reading…' : 'Try a sample route…' }, ...SAMPLE_ROUTES.map((r) => ({ value: r.file, label: r.name }))]}
+          onChange={(file) => file && !busy && void runImport(() => importSampleRoute(file))}
+        />
+      </Field>
       {errors.map((error) => (
         <div key={error} className="notice error">
           {error}
@@ -130,6 +162,17 @@ export function RoutesPanel() {
               <RouteRow key={route.id} route={route} />
             ))}
           </div>
+          <button
+            type="button"
+            className="btn btn-small route-edit-button"
+            title="Move points onto the roads, cut bits out or trim the ends, in the preview"
+            onClick={() => {
+              setView('preview');
+              setRouteEditing(true);
+            }}
+          >
+            Edit in preview
+          </button>
           <div className="button-group route-fit">
             <button type="button" className="btn btn-small" disabled={lines.length === 0} onClick={() => fit(false)}>
               Fit map
