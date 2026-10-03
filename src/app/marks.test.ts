@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_MARK, type MapMark, layoutMark } from '../engine/marks/marks.ts';
+import { insetShape, shapeContains } from '../engine/layout/shapes.ts';
 import { dragMark, markAt, scaleMark } from './markDrag.ts';
 import { addMark, duplicateMark, markSpot, nudgeMark, pieceLayout, removeMark, setMarkAnchor, updateMark, useMarkUi } from './marks.ts';
 import { defaultSettings, mergeSettings } from './settings.ts';
@@ -52,6 +53,18 @@ describe('adding pins and text', () => {
     const [x, y] = markSpot(marks()[0])!;
     expect(x).toBeGreaterThanOrEqual(w.x);
     expect(y).toBeGreaterThanOrEqual(w.y);
+  });
+
+  it('keeps automatically placed marks inside every crop shape, including narrow pieces', () => {
+    for (const shape of ['rect', 'rounded', 'circle', 'hexagon'] as const) {
+      useApp.setState(initial, true);
+      useApp.getState().setProduct({ shape, width: 80, height: 40, cornerRadius: 12 });
+      const window = insetShape(pieceLayout(useApp.getState())!.window, -0.001);
+      for (let i = 0; i < 60; i++) {
+        addMark({ shape: 'pin' });
+        expect(shapeContains(window, markSpot(marks().at(-1)!)!), `${shape}, mark ${i + 1}`).toBe(true);
+      }
+    }
   });
 
   it('nudges, copies and deletes', () => {
@@ -147,6 +160,16 @@ describe('dragging a mark', () => {
     expect(scaleMark(m, 2)).toEqual({ size: 20, textSize: 4 });
     // The text can't go under 0.8 mm, so the pin stops at 4 mm.
     expect(scaleMark(m, 0.1)).toEqual({ size: 4, textSize: 0.8 });
+  });
+
+  it('keeps unused sizes valid when scaling shapes without text or text without a shape', () => {
+    expect(scaleMark(mark({ shape: 'pin', size: 1, text: '', textSize: 3 }), 150)).toEqual({ size: 150, textSize: 60 });
+    expect(scaleMark(mark({ shape: 'none', size: 150, text: 'Hi', textSize: 3 }), 20)).toEqual({ size: 150, textSize: 60 });
+    expect(scaleMark(mark({ shape: 'none', size: 1, text: 'Hi', textSize: 60 }), 0.01)).toEqual({ size: 1, textSize: 0.8 });
+  });
+
+  it('leaves empty text unchanged when resized', () => {
+    expect(scaleMark(mark({ shape: 'none', text: '' }), 0)).toEqual({ size: 7, textSize: 3 });
   });
 
   it('finds a turned mark by its own outline', () => {

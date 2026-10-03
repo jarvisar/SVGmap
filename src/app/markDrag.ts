@@ -139,9 +139,11 @@ export function dragMark(drag: MarkDrag, point: Point, snap = false): MarkDragRe
 
 /** The shape and the text both k times the size, as far as their ranges let them go. */
 export function scaleMark(mark: MapMark, k: number): Pick<MapMark, 'size' | 'textSize'> {
+  if (mark.shape === 'none' && !hasText(mark)) return { size: mark.size, textSize: mark.textSize };
   const [lo, hi] = scaleRange(mark);
   const f = Math.min(hi, Math.max(lo, k));
-  return { size: round(mark.size * f, 0.1), textSize: round(mark.textSize * f, 0.05) };
+  const fit = (value: number, range: { min: number; max: number }) => Math.min(range.max, Math.max(range.min, value));
+  return { size: fit(round(mark.size * f, 0.1), MARK_RANGES.size), textSize: fit(round(mark.textSize * f, 0.05), MARK_RANGES.textSize) };
 }
 
 /** A resize cursor for a corner, turned with the mark. */

@@ -15,6 +15,7 @@ import {
   textBeside,
 } from '../../engine/marks/marks.ts';
 import { MARK_SHAPES, SHAPE_ORDER } from '../../engine/marks/shapes.ts';
+import { shapeContains } from '../../engine/layout/shapes.ts';
 import { fontInfo } from '../../engine/text/fonts.ts';
 import { ColorInput, Check, Disclosure, Field, NumberField, Segmented, Select, SelectField, Slider } from '../components/controls.tsx';
 import { MarkIcon } from '../components/MarkIcon.tsx';
@@ -172,8 +173,7 @@ function useOffMap(mark: MapMark): boolean {
   const layout = pieceLayout({ product, border });
   const at = markSpot(mark, { area, product, border });
   if (!layout || !at) return false;
-  const w = layout.window;
-  return at[0] < w.x || at[0] > w.x + w.w || at[1] < w.y || at[1] > w.y + w.h;
+  return !shapeContains(layout.window, at);
 }
 
 export function MarkEditor(props: { mark: MapMark }) {
@@ -184,6 +184,7 @@ export function MarkEditor(props: { mark: MapMark }) {
   const customFontName = useApp((s) => s.customFontName);
   const focusText = useMarkUi((s) => s.focusText);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const textId = useId();
   const offMap = useOffMap(mark);
   const set = (patch: Partial<Omit<MapMark, 'id'>>) => updateMark(mark.id, patch);
 
@@ -217,9 +218,9 @@ export function MarkEditor(props: { mark: MapMark }) {
         <ShapePicker value={mark.shape} onChange={(shape) => set({ shape })} />
       </Field>
       <div className="field">
-        <label htmlFor={`mark-text-${mark.id}`}>Text</label>
+        <label htmlFor={textId}>Text</label>
         <textarea
-          id={`mark-text-${mark.id}`}
+          id={textId}
           ref={textRef}
           className="input mark-text"
           rows={2}

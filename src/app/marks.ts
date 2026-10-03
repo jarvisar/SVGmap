@@ -71,7 +71,7 @@ function freeSpot(marks: MapMark[], s: AppState, layout: Layout, adding: Partial
     for (let i = 0; i < count; i++) {
       const a = (2 * Math.PI * i) / count;
       const p: Point = [cx + ring * step * Math.cos(a), cy + ring * step * Math.sin(a)];
-      if (taken.every(({ at, r }) => Math.hypot(at[0] - p[0], at[1] - p[1]) > Math.max(step, r + own))) return p;
+      if (shapeContains(layout.window, p) && taken.every(({ at, r }) => Math.hypot(at[0] - p[0], at[1] - p[1]) > Math.max(step, r + own))) return p;
     }
   }
   return [cx, cy];

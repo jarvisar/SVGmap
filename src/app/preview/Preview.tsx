@@ -184,7 +184,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
   const selectedMark = marks.find((m) => m.id === selectedMarkId) ?? null;
   const selectedPlaced = placedMarks.find((p) => p.mark.id === selectedMarkId) ?? null;
   const markSpots = useMemo(() => (selectedPlaced && !picking ? markHandles(selectedPlaced, unit) : []), [selectedPlaced, picking, unit]);
-  const ghostMarks = marks.length > 0 && (!props.upToDate || markDragged !== null);
+  const ghostMarks = !props.upToDate || markDragged !== null;
   useEffect(() => {
     if (selectedMarkId && !marks.some((m) => m.id === selectedMarkId)) selectMark(null);
   }, [marks, selectedMarkId]);
@@ -299,6 +299,8 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     const at = pieceAt(point);
     if (!at || picking || tool || routeEditing) return null;
     if (selectedPlaced) {
+      // On small marks the finger reach of the corners covers the whole body.
+      if (COARSE && markAt(placedMarks, [at.x, at.y], 0) === selectedPlaced.mark.id) return { id: selectedPlaced.mark.id, grip: 'move' };
       const handle = markHandleAt(markSpots, [at.x, at.y], HANDLE_REACH * at.k);
       if (handle) return { id: selectedPlaced.mark.id, grip: handle };
     }
@@ -332,7 +334,7 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
     }
     const point = stagePoint(e);
     pointers.current.set(e.pointerId, point);
-    pressed.current = pointers.current.size === 1 ? { point, moved: false } : null;
+    pressed.current = pointers.current.size === 1 && e.button === 0 ? { point, moved: false } : null;
     // A second finger puts back whatever the first was dragging and pinches instead.
     if (pointers.current.size > 1) routeEditor.cancel();
     if (titleGrab.current || markGrab.current) {
@@ -598,6 +600,15 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onLostPointerCapture={(e) => {
+          if (!pointers.current.has(e.pointerId)) return;
+          routeEditor.cancel();
+          cancelMarkDrag();
+          cancelTitleDrag();
+          pressed.current = null;
+          pointers.current.delete(e.pointerId);
+          restart();
+        }}
         onPointerLeave={() => {
           routeEditor.hover(null, false);
           setHoverCursor(null);
