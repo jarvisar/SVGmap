@@ -138,7 +138,8 @@ export function LocationPanel() {
   const setScale = useApp((s) => s.setScale);
   const locked = useApp((s) => s.scaleLocked);
   const setLocked = useApp((s) => s.setScaleLocked);
-  const scale = Math.round(useApp(scaleOf));
+  const exactScale = useApp(scaleOf);
+  const scale = Math.round(exactScale);
   const km = area.widthM / 1000;
 
   return (
@@ -154,26 +155,38 @@ export function LocationPanel() {
           onChange={(id) => id && asChange(`Go to ${PLACE_PRESETS.find((p) => p.id === id)?.name ?? 'place'}`, () => applyPlace(id))}
         />
       </Field>
+      <Field label="Map width">
+        <NumberInput
+          value={km}
+          step={0.1}
+          min={0.1}
+          max={60}
+          unit="km"
+          label="Map width"
+          disabled={locked}
+          onChange={(v) => setArea({ widthM: v * 1000 })}
+        />
+      </Field>
       <div className="row">
-        <Field label="Map width">
-          <NumberInput
-            value={km}
-            step={0.1}
-            min={0.1}
-            max={60}
-            unit="km"
-            label="Map width"
-            disabled={locked}
-            onChange={(v) => setArea({ widthM: v * 1000 })}
-          />
-        </Field>
         <Field label="Scale (1:n)">
           <div className="input-lock">
             <NumberInput value={scale} step={500} min={100} max={2000000} label="Scale" onChange={setScale} />
             <LockButton locked={locked} onChange={setLocked} />
           </div>
         </Field>
+        <Field label="Scale (mm/m)">
+          <NumberInput
+            value={1000 / exactScale}
+            step={0.000001}
+            min={0.0005}
+            max={10}
+            unit="mm/m"
+            label="Scale (mm/m)"
+            onChange={(v) => setScale(1000 / v)}
+          />
+        </Field>
       </div>
+      <div className="hint">Millimetres on the map per metre on the ground: 1:20,000 = 0.05 mm/m.</div>
       {locked ? (
         <div className="hint">Zooming is off. New places and product sizes keep 1:{scale.toLocaleString()}, and the map width follows.</div>
       ) : null}

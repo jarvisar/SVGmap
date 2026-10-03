@@ -22,7 +22,7 @@ Settings are saved in the browser. `Reset settings` at the bottom of the sidebar
 
 The settings are:
 
-* Location sets the area. Map width and scale are two ways of saying the same thing.
+* Location sets the area. Map width and scale are two ways of saying the same thing. Enter scale as a ratio (1:n) or millimetres on the map per metre on the ground (mm/m): 1:20,000 = 0.05 mm/m. The two scale fields update together.
 * Routes adds runs, rides and other routes from GPX and similar files, or draws them. See below.
 * Size sets the piece: a preset (plaques, paper sizes, coasters) or your own width and height, the shape (rectangle, rounded, circle or hexagon), the blank margin inside the cut and the border and its colours.
 * Output switches between laser, plotter and print.
