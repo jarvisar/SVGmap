@@ -137,6 +137,14 @@ const Sidebar = memo(function Sidebar() {
             Reset settings
           </button>
         </div>
+        <div className="sidebar-support">
+          <a className="btn btn-primary" href="https://buymeacoffee.com/jarvizar" target="_blank" rel="noopener noreferrer">
+            Buy me a coffee
+          </a>
+          <a className="btn btn-primary" href="https://www.patreon.com/Jarvizar" target="_blank" rel="noopener noreferrer">
+            Patreon
+          </a>
+        </div>
       </div>
     </aside>
   );

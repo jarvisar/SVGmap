@@ -1163,6 +1163,18 @@ button.menu-toggle,
   text-decoration: underline;
 }
 
+.sidebar-support {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sidebar-support .btn {
+  color: #fff;
+  text-decoration: none;
+}
+
 /* Same look as the boxes floating over the map and preview */
 .crash,
 .toast,
