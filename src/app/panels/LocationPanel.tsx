@@ -114,8 +114,9 @@ function PlaceSearch() {
   );
 }
 
-// Locking keeps the scale when zooming the map, picking a place or changing the
-// product size. The scale field itself still sets it.
+// Locking keeps the scale when picking a place or changing the product size.
+// Resizing the capture on the map changes the piece size instead. The scale
+// fields still set it.
 function LockButton(props: { locked: boolean; onChange: (locked: boolean) => void }) {
   return (
     <button
@@ -188,7 +189,7 @@ export function LocationPanel() {
       </div>
       <div className="hint">Millimetres on the map per metre on the ground: 1:20,000 = 0.05 mm/m.</div>
       {locked ? (
-        <div className="hint">Zooming is off. New places and product sizes keep 1:{scale.toLocaleString()}, and the map width follows.</div>
+        <div className="hint">New places and product sizes keep 1:{scale.toLocaleString()}. Resizing the capture on the map changes the piece size instead.</div>
       ) : null}
       <Slider
         label="Rotation"

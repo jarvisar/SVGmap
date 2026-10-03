@@ -45,11 +45,14 @@ export function MarkDrawing(props: {
   windowD: string;
   clipId: string;
   lineWidth?: number;
+  // Map overlays keep outlines at this screen width as the camera zooms.
+  screenLineWidth?: number;
   // A mark just added, which drops in.
   fresh?: string | null;
 }) {
   const { items, inkOf, paper, windowD, clipId } = props;
-  const width = props.lineWidth ?? 0.25;
+  const width = props.screenLineWidth ?? props.lineWidth ?? 0.25;
+  const vectorEffect = props.screenLineWidth === undefined ? undefined : 'non-scaling-stroke';
   return (
     <g pointerEvents="none">
       <clipPath id={clipId}>
@@ -76,10 +79,10 @@ export function MarkDrawing(props: {
                 </>
               ) : null}
               {art.fill.length ? (
-                <path d={rings(art.fill)} fill={outline ? 'none' : ink} fillOpacity={mark.fill === 'hatch' || mark.fill === 'contour' ? 0.75 : 1} stroke={outline ? ink : 'none'} strokeWidth={width} />
+                <path d={rings(art.fill)} fill={outline ? 'none' : ink} fillOpacity={mark.fill === 'hatch' || mark.fill === 'contour' ? 0.75 : 1} stroke={outline ? ink : 'none'} strokeWidth={width} vectorEffect={vectorEffect} />
               ) : null}
-              {art.holes.length ? <path d={rings(art.holes)} fill={outline ? 'none' : paper} stroke={outline ? ink : 'none'} strokeWidth={width} /> : null}
-              {art.extra.length ? <path d={rings(art.extra)} fill={outline ? 'none' : ink} stroke={outline ? ink : 'none'} strokeWidth={width} /> : null}
+              {art.holes.length ? <path d={rings(art.holes)} fill={outline ? 'none' : paper} stroke={outline ? ink : 'none'} strokeWidth={width} vectorEffect={vectorEffect} /> : null}
+              {art.extra.length ? <path d={rings(art.extra)} fill={outline ? 'none' : ink} stroke={outline ? ink : 'none'} strokeWidth={width} vectorEffect={vectorEffect} /> : null}
               {letters ? (
                 <path
                   d={letters}
@@ -87,6 +90,7 @@ export function MarkDrawing(props: {
                   fillOpacity={textFill === 'hatch' || textFill === 'contour' ? 0.75 : 1}
                   stroke={textOutline ? ink : 'none'}
                   strokeWidth={width}
+                  vectorEffect={vectorEffect}
                 />
               ) : null}
               {strokes ? <path d={strokes} fill="none" stroke={letterInk} strokeWidth={art.inside ? 0.4 : 0.3} /> : null}

@@ -10,7 +10,9 @@ Visit the [GitHub Pages site](https://svgmap.jarvisar.com/) to access the latest
 
 ## How to Use
 
-Search for a place or pick one of the example cities. To map a run or ride, import its GPX file under Routes and the map moves to fit it. Drag the map to move the frame, scroll to zoom and right-drag to rotate. On a phone, pinch to zoom and twist to rotate. The frame shows the whole piece, including the margins, border and title.
+Search for a place or pick one of the example cities. To map a run or ride, import its GPX file under Routes and the map moves to fit it. The white frame on the map is the capture area. It shows the whole piece, including the margins, border and title. Drag the map to look around, scroll to zoom and right-drag to rotate the view. On a phone, pinch to zoom and twist to rotate. The capture stays put while you look around. Drag the white frame to move it. Drag a corner or side handle to resize it, which changes the scale. Drag the round handle above it to turn it, and hold Shift to snap to 15°. Click `Fit capture` to bring the whole frame back into view.
+
+Click the lock next to the scale to keep it fixed. The handles then resize the piece itself, so the map shows more or less ground at the same scale. A side handle only changes the width or height. Circles and hexagons grow evenly.
 
 Click `Generate` to build the SVG. The preview updates as you change settings. Scroll or pinch to zoom the preview and drag to move it. Double-click it or click `Fit` to see the whole piece again. Click `Download SVG` to save the file, or `Share` to copy a link with your settings. `Export` has the other formats and options. See Export below.
 

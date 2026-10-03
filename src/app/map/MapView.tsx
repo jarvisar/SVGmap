@@ -1,21 +1,24 @@
 import { type GeoJSONSource, Map as MapLibre, NavigationControl, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { metresPerPixel, zoomForMetres } from '../../engine/geo/mercator.ts';
+import { type Ref, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { zoomForMetres } from '../../engine/geo/mercator.ts';
 import type { AreaSpec } from '../../engine/geo/transform.ts';
-import { type Layout, computeLayout } from '../../engine/layout/layout.ts';
+import { type BorderSettings, type Layout, type ProductSettings, computeLayout } from '../../engine/layout/layout.ts';
 import { bandPathD, shapePathD } from '../../engine/layout/shapes.ts';
 import { type MapMark, markPlacedAt, markPoint } from '../../engine/marks/marks.ts';
 import type { LabelArtwork, LabelSettings } from '../../engine/text/label.ts';
 import { LockIcon } from '../components/controls.tsx';
 import { type HandleSpot, type TitleDrag, type TitleGrip, canDrag, dragTitle, droppedLabel, handleAt, resizeCursor, spacedHandles, titleAt, titleHandles } from '../labelDrag.ts';
-import { MARK_REACH_PX, type PlacedMark, markAt } from '../markDrag.ts';
+import { MARK_REACH_PX, type PlacedMark, markAt, markCorners } from '../markDrag.ts';
 import { markTransform, selectMark, updateMark, useMarkUi } from '../marks.ts';
 import { usePlaceholderValues } from '../placeholders.ts';
 import { MarkDrawing, MarkFrames } from '../preview/MarkTools.tsx';
 import { routesGeoJson } from '../routes.ts';
 import { scaleOf, useApp } from '../store.ts';
+import { asChange } from '../undo.ts';
+import { CaptureControls } from './CaptureControls.tsx';
+import { type CaptureChange, type CaptureFrame, type CaptureGrip, type FrameView, frameForView, frameTransform, toPiece, toScreen } from './captureFrame.ts';
 import { BREAK_MASK, BorderBreakMask, INK, PAPER, TitleOverlay } from './TitleOverlay.tsx';
 import { useLabelArtwork } from './useLabelArtwork.ts';
 import { useMarkArtworks } from './useMarkArtwork.ts';
@@ -26,8 +29,9 @@ const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
 setWorkerUrl(maplibreWorker);
 
 const COARSE = matchMedia('(pointer: coarse)').matches;
-const HINT = COARSE ? 'Drag to move, pinch to zoom, twist to rotate' : 'Drag to move, scroll to zoom, right-drag to rotate';
-const LOCKED_HINT = COARSE ? 'Drag to move, twist to rotate' : 'Drag to move, right-drag to rotate';
+const HINT = COARSE
+  ? 'Drag or pinch to look around. Drag the white frame to move the capture, or its handles to resize or turn it.'
+  : 'Drag or scroll to look around. Drag the white frame to move the capture, or its handles to resize or turn it.';
 
 // Title handles in screen pixels: their size, how far apart they're kept, and
 // how far from one a press still takes it. Fingers get further.
@@ -42,19 +46,7 @@ type Point = [number, number];
 const MIN_ZOOM = 0;
 const MAX_ZOOM = 24;
 
-// Locking sets both zoom limits to the zoom for the locked scale, which stops
-// every way of zooming and greys out the zoom buttons. null opens them again.
-function pinZoom(map: MapLibre, zoom: number | null) {
-  const min = zoom === null ? MIN_ZOOM : Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
-  const max = zoom === null ? MAX_ZOOM : min;
-  if (map.getMinZoom() === min && map.getMaxZoom() === max) return;
-  // MapLibre throws if min would end up above max, so widen the range first.
-  map.setMinZoom(MIN_ZOOM);
-  map.setMaxZoom(max);
-  map.setMinZoom(min);
-}
-
-interface Frame {
+interface FittedFrame {
   // px per mm
   scale: number;
   ox: number;
@@ -63,7 +55,7 @@ interface Frame {
   padding: { top: number; right: number; bottom: number; left: number };
 }
 
-function fitFrame(layout: Layout, width: number, height: number): Frame {
+function fitFrame(layout: Layout, width: number, height: number): FittedFrame {
   const hint = 36;
   const pad = Math.max(20, Math.min(width, height) * 0.06);
   const { canvas, window } = layout;
@@ -84,8 +76,25 @@ function fitFrame(layout: Layout, width: number, height: number): Frame {
   };
 }
 
-const sameArea = (a: AreaSpec | null, b: AreaSpec) =>
-  a !== null &&
+function tryLayout(product: ProductSettings, border: BorderSettings): Layout | null {
+  try {
+    return computeLayout(product, border);
+  } catch {
+    return null;
+  }
+}
+
+// Where the capture is on screen for the camera right now. Read from the map
+// rather than kept in state, since the camera moves without React knowing.
+function cameraFrame(map: MapLibre, layout: Layout, area: AreaSpec): CaptureFrame {
+  // Use the world copy nearest the camera when the view crosses the dateline.
+  const lon = area.lon + 360 * Math.round((map.getCenter().lng - area.lon) / 360);
+  const centre = map.project([lon, area.lat]);
+  return frameForView(layout, area, [centre.x, centre.y], map.getZoom(), map.getBearing());
+}
+
+const sameArea = (a: AreaSpec | null | undefined, b: AreaSpec) =>
+  a != null &&
   Math.abs(a.lon - b.lon) < 1e-9 &&
   Math.abs(a.lat - b.lat) < 1e-9 &&
   Math.abs(a.bearing - b.bearing) < 1e-6 &&
@@ -95,16 +104,20 @@ export function MapView() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibre | null>(null);
-  const frameRef = useRef<Frame | null>(null);
-  const fromMap = useRef<AreaSpec | null>(null);
-  const programmatic = useRef(false);
+  const overlayRef = useRef<FrameView>(null);
+  const controlsRef = useRef<FrameView>(null);
+  const presentedFrame = useRef<CaptureFrame | null>(null);
+  const presentFrame = useRef<(force?: boolean) => void>(() => {});
   // Sources can only be added once the style has loaded.
   const styleLoaded = useRef(false);
   const showRoutes = useRef(() => {});
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [nudged, setNudged] = useState(false);
+  // The capture while it's dragged on the map. It's only stored when let go.
+  const [captureDraft, setCaptureDraft] = useState<CaptureChange | null>(null);
+  const [captureHover, setCaptureHover] = useState<CaptureGrip | null>(null);
 
   const area = useApp((s) => s.area);
+  const shownArea = captureDraft?.area ?? area;
   const product = useApp((s) => s.product);
   const border = useApp((s) => s.border);
   const label = useApp((s) => s.label);
@@ -112,27 +125,25 @@ export function MapView() {
   const setArea = useApp((s) => s.setArea);
   const scaleLocked = useApp((s) => s.scaleLocked);
   const setScaleLocked = useApp((s) => s.setScaleLocked);
-  const scale = Math.round(useApp(scaleOf));
+  const storedScale = useApp(scaleOf);
   const routeItems = useApp((s) => s.routes.items);
   const routeColor = useApp((s) => s.styles[s.mode].colors.route);
   const routeData = useMemo(() => routesGeoJson(routeItems), [routeItems]);
 
-  const layout = useMemo(() => {
-    try {
-      return computeLayout(product, border);
-    } catch {
-      return null;
-    }
-  }, [product, border]);
-  const frame = useMemo(() => (layout && size.w > 0 ? fitFrame(layout, size.w, size.h) : null), [layout, size]);
-  frameRef.current = frame;
+  const storedLayout = useMemo(() => tryLayout(product, border), [product, border]);
+  const draftLayout = useMemo(() => (captureDraft?.product ? tryLayout(captureDraft.product, border) : null), [captureDraft, border]);
+  const layout = draftLayout ?? storedLayout;
+  const map = mapRef.current;
+  const frame = map && layout && size.w > 0 && size.h > 0 ? cameraFrame(map, layout, shownArea) : null;
+  // Follows a drag on the capture before it's stored.
+  const scale = Math.round(layout ? (shownArea.widthM / layout.window.w) * 1000 : storedScale);
   // The scale bar and north arrows follow the map. Other titles don't need
   // it, so they aren't laid out again every time the map moves.
   const needsMap = label.style === 'legend' || label.style === 'badge';
-  const metresPerMm = layout ? area.widthM / layout.window.w : 0;
+  const metresPerMm = layout ? shownArea.widthM / layout.window.w : 0;
   const mapInfo = useMemo(
-    () => (needsMap && metresPerMm > 0 ? { metresPerMm, bearing: area.bearing } : null),
-    [needsMap, metresPerMm, area.bearing],
+    () => (needsMap && metresPerMm > 0 ? { metresPerMm, bearing: shownArea.bearing } : null),
+    [needsMap, metresPerMm, shownArea.bearing],
   );
   // The title while it's dragged on the map. It's only stored when let go.
   // Pressing it selects it, which shows its handles.
@@ -142,12 +153,11 @@ export function MapView() {
   const shownLabel = dragged ?? label;
   const values = usePlaceholderValues();
   const { artwork, error: labelError, layoutWith } = useLabelArtwork(true, layout, shownLabel, customFontId, values, mapInfo);
-  // Handles only on a title big enough on screen to grab them apart from it.
+  // All of the selected title's handles. Which ones show depends on how big it
+  // is on screen, so that's left to the overlay and gripAt, which know the camera.
   const handles = useMemo(() => {
-    if (!titleSelected || !artwork || !layout || !frame) return [];
-    if (Math.max(artwork.knockout[2], artwork.knockout[3]) * frame.scale < 24) return [];
-    return spacedHandles(titleHandles(layout, shownLabel, artwork), (x, y) => [x * frame.scale, y * frame.scale], HANDLE_GAP);
-  }, [titleSelected, artwork, layout, frame, shownLabel]);
+    return titleSelected && artwork && layout ? titleHandles(layout, shownLabel, artwork) : [];
+  }, [titleSelected, artwork, layout, shownLabel]);
   // Pins and text, which can be dragged on the map too. Resizing and turning
   // them is left to the preview and the sidebar.
   const marks = useApp((s) => s.marks);
@@ -157,14 +167,34 @@ export function MapView() {
   const [markHover, setMarkHover] = useState<string | null>(null);
   const placedMarks: PlacedMark[] = useMemo(() => {
     if (!layout) return [];
-    const transform = markTransform(area, layout);
+    const transform = markTransform(shownArea, layout);
     return marks.map((m) => {
       const mark = markDragged?.id === m.id ? markDragged : m;
       return { mark, art: liveMarks.layoutWith(mark), at: markPoint(mark, transform, layout.window) };
     });
-  }, [marks, markDragged, liveMarks, area, layout]);
-  const latest = useRef({ layout, label, artwork, layoutWith, frame, handles, placedMarks, area });
-  latest.current = { layout, label, artwork, layoutWith, frame, handles, placedMarks, area };
+  }, [marks, markDragged, liveMarks, shownArea, layout]);
+  // For the handlers below. React can render this and then throw the render
+  // away, so nothing in here may come from outside React state, like the
+  // camera. Handlers read the frame from the map instead.
+  const latest = useRef({ layout, label, artwork, layoutWith, handles, placedMarks, area: shownArea, size });
+  latest.current = { layout, label, artwork, layoutWith, handles, placedMarks, area: shownArea, size };
+  const liveFrame = useRef(() => {
+    const map = mapRef.current;
+    const { layout, area, size } = latest.current;
+    return map && layout && size.w > 0 && size.h > 0 ? cameraFrame(map, layout, area) : null;
+  }).current;
+  presentFrame.current = (force = false) => {
+    const next = liveFrame();
+    if (!next) return;
+    const last = presentedFrame.current;
+    if (!force && last && next.ox === last.ox && next.oy === last.oy && next.scale === last.scale && next.angle === last.angle) return;
+    presentedFrame.current = next;
+    overlayRef.current?.updateFrame(next);
+    controlsRef.current?.updateFrame(next);
+  };
+  // Keep the SVG transforms in the camera's render cycle. A queued React
+  // update can be cancelled repeatedly during a gesture and lag behind it.
+  useLayoutEffect(() => presentFrame.current(true));
   useEffect(() => {
     if (!artwork) setTitleSelected(false);
   }, [artwork]);
@@ -177,25 +207,32 @@ export function MapView() {
     if (!wrap) return;
     let grab: { pointerId: number; start: Point; screen: Point; moved: boolean; drag: TitleDrag; to: LabelSettings | null } | null = null;
     let markGrab: { pointerId: number; start: Point; screen: Point; moved: boolean; from: PlacedMark; to: MapMark | null } | null = null;
+    // The white frame around the map moves the capture, but a title or mark
+    // drawn over it comes first.
     const onCanvas = (e: Event) => {
       const map = mapRef.current;
-      return Boolean(map && e.target instanceof Node && map.getCanvasContainer().contains(e.target));
+      if (!map || !(e.target instanceof Element)) return false;
+      return map.getCanvasContainer().contains(e.target) || e.target.classList.contains('capture-band');
     };
-    const toPiece = (e: { clientX: number; clientY: number }): Point | null => {
-      const f = latest.current.frame;
+    const pieceAt = (e: { clientX: number; clientY: number }): Point | null => {
+      const f = liveFrame();
       if (!f) return null;
       const r = wrap.getBoundingClientRect();
-      return [(e.clientX - r.left - f.ox) / f.scale, (e.clientY - r.top - f.oy) / f.scale];
+      return toPiece(f, [e.clientX - r.left, e.clientY - r.top]);
     };
     const gripAt = (e: { clientX: number; clientY: number }): TitleGrip | null => {
-      const { artwork: shown, label: stored, handles: spots, frame: f } = latest.current;
-      const p = toPiece(e);
+      const { artwork: shown, label: stored, handles: spots } = latest.current;
+      const f = liveFrame();
+      const p = pieceAt(e);
       if (!p || !shown || !f) return null;
-      return handleAt(spots, p[0], p[1], HANDLE_REACH / f.scale) ?? (titleAt(stored, shown, p[0], p[1]) ? 'move' : null);
+      const visible = shown && Math.max(shown.knockout[2], shown.knockout[3]) * f.scale >= 24
+        ? spacedHandles(spots, (x, y) => toScreen(f, [x, y]), HANDLE_GAP) : [];
+      return handleAt(visible, p[0], p[1], HANDLE_REACH / f.scale) ?? (titleAt(stored, shown, p[0], p[1]) ? 'move' : null);
     };
     const markUnder = (e: { clientX: number; clientY: number }): PlacedMark | null => {
-      const { placedMarks: items, frame: f } = latest.current;
-      const p = toPiece(e);
+      const { placedMarks: items } = latest.current;
+      const f = liveFrame();
+      const p = pieceAt(e);
       if (!p || !f) return null;
       const id = markAt(
         items.filter((i) => !i.art.empty),
@@ -216,6 +253,9 @@ export function MapView() {
     const setCursor = (cursor: string) => {
       const container = mapRef.current?.getCanvasContainer();
       if (container) container.style.cursor = cursor;
+      // The white frame has a cursor of its own, for moving the capture.
+      if (cursor) wrap.style.setProperty('--capture-cursor', cursor);
+      else wrap.style.removeProperty('--capture-cursor');
     };
     const finish = (keep: boolean) => {
       const g = grab;
@@ -237,7 +277,7 @@ export function MapView() {
       if (!onCanvas(e) || e.button !== 0) return;
       // Marks are drawn over the title, so they come first.
       const hit = markUnder(e);
-      const from = toPiece(e);
+      const from = pieceAt(e);
       if (hit && from) {
         e.stopPropagation();
         e.preventDefault();
@@ -254,7 +294,7 @@ export function MapView() {
       }
       const grip = gripAt(e);
       const { artwork: shown, label: stored } = latest.current;
-      const start = toPiece(e);
+      const start = pieceAt(e);
       if (!grip || !shown || !start) {
         setTitleSelected(false);
         return;
@@ -273,7 +313,10 @@ export function MapView() {
     };
     const cursorOf = (grip: TitleGrip) => {
       const spot = latest.current.handles.find((h) => h.id === grip);
-      return spot ? resizeCursor(spot.dx, spot.dy) : null;
+      const f = liveFrame();
+      if (!spot || !f) return null;
+      const [dx, dy] = toScreen({ ...f, scale: 1, ox: 0, oy: 0 }, [spot.dx, spot.dy]);
+      return resizeCursor(dx, dy);
     };
     const onMove = (e: PointerEvent) => {
       if (markGrab && e.pointerId === markGrab.pointerId) {
@@ -281,7 +324,7 @@ export function MapView() {
         if (!markGrab.moved && Math.hypot(e.clientX - markGrab.screen[0], e.clientY - markGrab.screen[1]) < DRAG_START_PX) return;
         markGrab.moved = true;
         const { layout: at, area: now } = latest.current;
-        const p = toPiece(e);
+        const p = pieceAt(e);
         if (!at || !p) return;
         const { from, start } = markGrab;
         const spot: Point = [from.at[0] + p[0] - start[0], from.at[1] + p[1] - start[1]];
@@ -295,7 +338,7 @@ export function MapView() {
         if (!grab.moved && Math.hypot(e.clientX - grab.screen[0], e.clientY - grab.screen[1]) < DRAG_START_PX) return;
         grab.moved = true;
         const { layout: at, layoutWith: relayout } = latest.current;
-        const p = toPiece(e);
+        const p = pieceAt(e);
         if (!at || !relayout || !p) return;
         grab.to = dragTitle(at, grab.drag, p[0] - grab.start[0], p[1] - grab.start[1], relayout);
         setDragged(grab.to);
@@ -359,7 +402,7 @@ export function MapView() {
       for (const type of swallowed) wrap.removeEventListener(type, swallow, true);
       window.removeEventListener('keydown', onKey);
     };
-  }, []);
+  }, [liveFrame]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -383,38 +426,12 @@ export function MapView() {
       styleLoaded.current = true;
       showRoutes.current();
     });
-    let pending = 0;
-    map.on('move', () => {
-      const f = frameRef.current;
-      if (programmatic.current || !f) return;
-      const c = map.getCenter().wrap();
-      const { area, scaleLocked } = useApp.getState();
-      const next: AreaSpec = {
-        lon: c.lng,
-        lat: c.lat,
-        bearing: map.getBearing(),
-        // While locked the stored width is exact. Metres per pixel drift a little
-        // as the map pans north or south, until the zoom is pinned again.
-        widthM: scaleLocked ? area.widthM : f.window.w * metresPerPixel(c.lat, map.getZoom()),
-      };
-      fromMap.current = next;
-      cancelAnimationFrame(pending);
-      pending = requestAnimationFrame(() => setArea(next));
-    });
-    // Zooming does nothing while locked, so point at the lock instead.
-    let nudgeTimer = 0;
-    const nudge = () => {
-      if (!useApp.getState().scaleLocked) return;
-      setNudged(true);
-      clearTimeout(nudgeTimer);
-      nudgeTimer = window.setTimeout(() => setNudged(false), 2500);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === '+' || e.key === '-' || e.key === '=') nudge();
-    };
-    container.addEventListener('wheel', nudge, { passive: true });
-    container.addEventListener('keydown', onKey);
-    map.on('dblclick', nudge);
+    const showCamera = () => presentFrame.current();
+    // Browsing changes only the camera. The capture is edited through its
+    // border, handles and Location fields.
+    map.on('move', showCamera);
+    map.on('resize', showCamera);
+    map.on('render', showCamera);
     mapRef.current = map;
     const observer = new ResizeObserver(([entry]) => {
       setSize({ w: entry.contentRect.width, h: entry.contentRect.height });
@@ -422,15 +439,11 @@ export function MapView() {
     observer.observe(container);
     return () => {
       observer.disconnect();
-      cancelAnimationFrame(pending);
-      clearTimeout(nudgeTimer);
-      container.removeEventListener('wheel', nudge);
-      container.removeEventListener('keydown', onKey);
       map.remove();
       mapRef.current = null;
       styleLoaded.current = false;
     };
-  }, [setArea]);
+  }, []);
 
   // Imported routes on the map, in the route colour on a white casing.
   useEffect(() => {
@@ -462,46 +475,76 @@ export function MapView() {
     show();
   }, [routeData, routeColor]);
 
-  // Move the map when the frame changes or the area was set somewhere else
-  // (search, presets, typed values). Areas the map reported itself are on screen.
-  const lastFrame = useRef<Frame | null>(null);
-  useEffect(() => {
+  const fitCapture = () => {
     const map = mapRef.current;
-    if (!map || !frame) return;
-    const frameChanged = frame !== lastFrame.current;
-    const moved = frameChanged || !sameArea(fromMap.current, area);
-    lastFrame.current = frame;
-    const zoom = zoomForMetres(area.lat, area.widthM, frame.window.w);
-    programmatic.current = true;
-    try {
-      if (frameChanged) map.resize();
-      pinZoom(map, scaleLocked && Number.isFinite(zoom) ? zoom : null);
-      if (moved) {
-        map.jumpTo({
-          center: [area.lon, area.lat],
-          zoom: Number.isFinite(zoom) ? zoom : map.getZoom(),
-          bearing: area.bearing,
-          padding: frame.padding,
-        });
-      }
-    } finally {
-      programmatic.current = false;
-    }
-    fromMap.current = area;
-  }, [frame, area, scaleLocked]);
+    const { layout, area, size } = latest.current;
+    if (!map || !layout || size.w <= 0 || size.h <= 0) return;
+    const fitted = fitFrame(layout, size.w, size.h);
+    const zoom = zoomForMetres(area.lat, area.widthM, fitted.window.w);
+    map.jumpTo({
+      center: [area.lon, area.lat],
+      zoom: Number.isFinite(zoom) ? zoom : map.getZoom(),
+      bearing: area.bearing,
+      padding: fitted.padding,
+    });
+  };
 
+  useEffect(() => {
+    mapRef.current?.resize();
+  }, [size]);
+
+  // The camera only moves by itself to show a capture changed somewhere else:
+  // a search, a preset, the Location or Size fields, or undo. A drag on the
+  // capture leaves it where it is, so the frame stays under the pointer.
+  const shownBy = useRef<{ layout: Layout; area: AreaSpec } | null>(null);
+  const dropped = useRef<{ product: ProductSettings; area: AreaSpec } | null>(null);
+  useEffect(() => {
+    if (!mapRef.current || !storedLayout || size.w <= 0 || size.h <= 0) return;
+    const last = shownBy.current;
+    const changed = !last || last.layout !== storedLayout || !sameArea(last.area, area);
+    const ours = dropped.current?.product === product && sameArea(dropped.current?.area, area);
+    if (changed && !ours) fitCapture();
+    shownBy.current = { layout: storedLayout, area };
+  }, [storedLayout, product, area, size]);
+
+  const commitCapture = (change: CaptureChange, grip: CaptureGrip) => {
+    const { product: next, area: to } = change;
+    if (next) {
+      asChange('Resize piece', () => useApp.getState().set({ product: next, productPreset: 'custom', area: to }));
+    } else {
+      const name = grip === 'move' ? 'Move capture area' : grip === 'rotate' ? 'Turn capture area' : 'Resize capture area';
+      asChange(name, () => setArea(to));
+    }
+    const stored = useApp.getState();
+    dropped.current = { product: stored.product, area: stored.area };
+  };
+
+  const captureHint = () => {
+    if (!captureHover) return null;
+    if (captureHover === 'move') return 'Drag to move the capture area.';
+    if (captureHover === 'rotate') {
+      const turned = captureDraft ? `Turned to ${Math.round(shownArea.bearing)}°. ` : 'Drag to turn the capture area. ';
+      return `${turned}Hold Shift to snap to 15°.`;
+    }
+    if (!scaleLocked) return 'Drag to resize the capture. The piece stays the same size and the scale changes.';
+    const piece = captureDraft?.product;
+    if (!piece) return `Drag to resize the piece. The scale is locked at 1:${scale.toLocaleString()}.`;
+    const size = piece.shape === 'circle' ? `⌀ ${piece.width.toFixed(1)} mm` : `${piece.width.toFixed(1)} × ${piece.height.toFixed(1)} mm`;
+    return `Piece ${size} at 1:${scale.toLocaleString()}.`;
+  };
   const hint = titleSelected
     ? `Drag the title or its handles. ${COARSE ? 'Tap' : 'Click'} the map to let go.`
     : markHover || markDragged
       ? 'Drag it to put it somewhere else. Resize and turn it in the preview.'
-      : scaleLocked
-      ? LOCKED_HINT
-      : HINT;
+      : titleHover
+        ? 'Drag to move the title.'
+        : (captureHint() ?? HINT);
   return (
     <div className="map-wrap" ref={wrapRef}>
       <div ref={containerRef} className="map" />
       {layout && frame ? (
         <Overlay
+          ref={overlayRef}
           layout={layout}
           frame={frame}
           width={size.w}
@@ -514,17 +557,38 @@ export function MapView() {
           markHover={markHover}
         />
       ) : null}
+      {layout && frame ? (
+        <CaptureControls
+          ref={controlsRef}
+          layout={layout}
+          area={area}
+          product={product}
+          border={border}
+          frame={frame}
+          width={size.w}
+          height={size.h}
+          locked={scaleLocked}
+          onStart={() => {
+            mapRef.current?.stop();
+            setTitleSelected(false);
+          }}
+          onHover={setCaptureHover}
+          onPreview={setCaptureDraft}
+          onCommit={commitCapture}
+          onWheel={(e) => mapRef.current?.getCanvas().dispatchEvent(new WheelEvent(e.type, e))}
+        />
+      ) : null}
       <div className="map-footer">
+        <button type="button" className="map-scale" title="Show the whole capture area" onClick={fitCapture}>Fit capture</button>
         <button
           type="button"
           className={scaleLocked ? 'map-scale locked' : 'map-scale'}
           aria-pressed={scaleLocked}
-          title={scaleLocked ? 'Unlock the scale to zoom again' : 'Lock the scale'}
+          title={scaleLocked ? 'Unlock the scale. Resizing the capture changes the scale again.' : 'Lock the scale. Resizing the capture then changes the piece size instead.'}
           onClick={() => setScaleLocked(!scaleLocked)}
         >
           <LockIcon locked={scaleLocked} />
           1:{scale.toLocaleString()}
-          {scaleLocked && nudged ? <span className="map-scale-note">Scale is locked. Click to unlock</span> : null}
         </button>
         <div className="map-hint">{hint}</div>
       </div>
@@ -534,8 +598,9 @@ export function MapView() {
 }
 
 function Overlay(props: {
+  ref: Ref<FrameView>;
   layout: Layout;
-  frame: Frame;
+  frame: CaptureFrame;
   width: number;
   height: number;
   artwork: LabelArtwork | null;
@@ -546,15 +611,48 @@ function Overlay(props: {
   markHover: string | null;
 }) {
   const { layout, frame, width, height, artwork, outline, handles, marks } = props;
-  const handle = HANDLE_SIZE / frame.scale;
+  const pieceRef = useRef<SVGGElement>(null);
+  const maskRef = useRef<SVGPathElement>(null);
+  const titleHandlesRef = useRef<SVGGElement>(null);
+  const markFramesRef = useRef<SVGGElement>(null);
+  useImperativeHandle(props.ref, () => ({
+    updateFrame(next) {
+      const transform = frameTransform(next);
+      pieceRef.current?.setAttribute('transform', transform);
+      maskRef.current?.setAttribute('transform', transform);
+      const visible = new Set(artwork && Math.max(artwork.knockout[2], artwork.knockout[3]) * next.scale >= 24
+        ? spacedHandles(handles, (x, y) => toScreen(next, [x, y]), HANDLE_GAP).map((spot) => spot.id) : []);
+      const rects = titleHandlesRef.current?.children;
+      handles.forEach((spot, i) => {
+        const element = rects?.[i] as SVGRectElement | undefined;
+        if (!element) return;
+        const [x, y] = toScreen(next, [spot.x, spot.y]);
+        element.setAttribute('x', String(x - HANDLE_SIZE / 2));
+        element.setAttribute('y', String(y - HANDLE_SIZE / 2));
+        element.style.display = visible.has(spot.id) ? '' : 'none';
+      });
+      const polygons = markFramesRef.current?.querySelectorAll('polygon');
+      let index = 0;
+      for (const placed of marks) {
+        if (placed.mark.id !== props.selectedMark && placed.mark.id !== props.markHover) continue;
+        polygons?.[index++]?.setAttribute('points', markCorners(placed, 3 / next.scale).map(([x, y]) => `${x},${y}`).join(' '));
+      }
+    },
+  }), [artwork, handles, marks, props.selectedMark, props.markHover]);
   const s = frame.scale;
-  const outside = `M${-frame.ox / s},${-frame.oy / s}h${width / s}v${height / s}h${-width / s}Z`;
+  const transform = frameTransform(frame);
   const broken = artwork?.borderBreaks.length ? `url(#${BREAK_MASK})` : undefined;
   return (
     <svg className="map-overlay" width={width} height={height}>
-      <g transform={`translate(${frame.ox} ${frame.oy}) scale(${s})`}>
+      <defs>
+        <mask id="capture-outside" maskUnits="userSpaceOnUse" x={0} y={0} width={width} height={height}>
+          <rect width={width} height={height} fill="#fff" />
+          <path ref={maskRef} d={shapePathD(layout.canvas)} transform={transform} fill="#000" />
+        </mask>
+      </defs>
+      <rect width={width} height={height} fill="rgba(40,40,40,0.35)" mask="url(#capture-outside)" />
+      <g ref={pieceRef} transform={transform}>
         <BorderBreakMask artwork={artwork} canvas={layout.canvas} />
-        <path d={outside + shapePathD(layout.canvas, true)} fill="rgba(40,40,40,0.35)" />
         <path d={bandPathD(layout.canvas, layout.window)} fill="rgba(255,255,255,0.82)" />
         <g mask={broken}>
           {layout.thickBand ? (
@@ -568,8 +666,10 @@ function Overlay(props: {
         {artwork ? <TitleOverlay artwork={artwork} windowD={shapePathD(layout.window)} /> : null}
         {marks.length ? (
           <>
-            <MarkDrawing items={marks} inkOf={() => INK} paper={PAPER} windowD={shapePathD(layout.window)} clipId="map-mark-window" lineWidth={1 / s} />
-            <MarkFrames items={marks} selected={props.selectedMark} hover={props.markHover} editing={false} handles={[]} unit={1 / s} />
+            <MarkDrawing items={marks} inkOf={() => INK} paper={PAPER} windowD={shapePathD(layout.window)} clipId="map-mark-window" screenLineWidth={1} />
+            <g ref={markFramesRef}>
+              <MarkFrames items={marks} selected={props.selectedMark} hover={props.markHover} editing={false} handles={[]} unit={1 / s} />
+            </g>
           </>
         ) : null}
         {artwork && outline ? (
@@ -581,9 +681,12 @@ function Overlay(props: {
             height={artwork.knockout[3]}
           />
         ) : null}
-        {handles.map((spot) => (
-          <rect key={spot.id} className="title-handle" x={spot.x - handle / 2} y={spot.y - handle / 2} width={handle} height={handle} />
-        ))}
+      </g>
+      <g ref={titleHandlesRef}>
+        {handles.map((spot) => {
+          const [x, y] = toScreen(frame, [spot.x, spot.y]);
+          return <rect key={spot.id} className="title-handle" x={x - HANDLE_SIZE / 2} y={y - HANDLE_SIZE / 2} width={HANDLE_SIZE} height={HANDLE_SIZE} />;
+        })}
       </g>
     </svg>
   );

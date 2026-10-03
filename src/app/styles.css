@@ -1204,7 +1204,8 @@ button.menu-toggle,
 .map-holder,
 .map-wrap,
 .map,
-.map-overlay {
+.map-overlay,
+.map-capture {
   position: absolute;
   inset: 0;
 }
@@ -1217,8 +1218,74 @@ button.menu-toggle,
   background: var(--map-bg);
 }
 
-.map-overlay {
+.map-overlay,
+.map-capture {
   pointer-events: none;
+}
+
+.map-capture {
+  touch-action: none;
+}
+
+/* The white frame around the map window. A title or mark over it is
+   picked up first, and sets --capture-cursor while the pointer is on it. */
+.capture-band {
+  fill: transparent;
+  pointer-events: fill;
+  cursor: var(--capture-cursor, move);
+  touch-action: none;
+}
+
+/* A few pixels past the outer edge, for when the frame is small on screen. */
+.capture-edge {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12px;
+  pointer-events: stroke;
+  cursor: move;
+  touch-action: none;
+}
+
+.capture-band:hover {
+  fill: rgb(42 116 200 / 0.08);
+}
+
+.capture-handle-target {
+  fill: transparent;
+  pointer-events: all;
+  touch-action: none;
+}
+
+.capture-handle {
+  fill: #fff;
+  stroke: var(--primary-border);
+  stroke-width: 1.5px;
+  pointer-events: all;
+  touch-action: none;
+}
+
+.capture-grip:hover .capture-handle {
+  fill: var(--primary-border);
+}
+
+.capture-rotate {
+  cursor: grab;
+}
+
+.capture-rotate:active {
+  cursor: grabbing;
+}
+
+.capture-rotate-stem {
+  stroke: var(--primary-border);
+  stroke-width: 1.5px;
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .capture-edge {
+    stroke-width: 28px;
+  }
 }
 
 .map-footer {
@@ -1262,12 +1329,6 @@ button.menu-toggle,
   box-shadow:
     inset 0 1px 3px rgb(0 0 0 / 0.4),
     var(--shadow-float);
-}
-
-.map-scale-note {
-  padding-left: 6px;
-  border-left: 1px solid rgb(255 255 255 / 0.35);
-  font-weight: normal;
 }
 
 .map-hint {
