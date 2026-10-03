@@ -11,7 +11,7 @@ import type { LabelArtwork, LabelSettings } from '../../engine/text/label.ts';
 import { LockIcon } from '../components/controls.tsx';
 import { type HandleSpot, type TitleDrag, type TitleGrip, canDrag, dragTitle, droppedLabel, handleAt, resizeCursor, spacedHandles, titleAt, titleHandles } from '../labelDrag.ts';
 import { MARK_REACH_PX, type PlacedMark, markAt, markCorners } from '../markDrag.ts';
-import { markTransform, selectMark, updateMark, useMarkUi } from '../marks.ts';
+import { markTransform, removeMark, selectMark, updateMark, useMarkUi } from '../marks.ts';
 import { usePlaceholderValues } from '../placeholders.ts';
 import { MarkDrawing, MarkFrames } from '../preview/MarkTools.tsx';
 import { routesGeoJson } from '../routes.ts';
@@ -281,6 +281,8 @@ export function MapView() {
       if (hit && from) {
         e.stopPropagation();
         e.preventDefault();
+        // The press is handled here, so move focus out of any sidebar field.
+        wrap.focus({ preventScroll: true });
         try {
           wrap.setPointerCapture(e.pointerId);
         } catch {
@@ -292,6 +294,7 @@ export function MapView() {
         setCursor('move');
         return;
       }
+      selectMark(null);
       const grip = gripAt(e);
       const { artwork: shown, label: stored } = latest.current;
       const start = pieceAt(e);
@@ -378,10 +381,24 @@ export function MapView() {
       setCursor('');
     };
     const onKey = (e: KeyboardEvent) => {
+      if (useApp.getState().view !== 'map') return;
+      if (e.key === 'Delete') {
+        if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || grab || markGrab) return;
+        const target = e.target as HTMLElement | null;
+        if (target?.isContentEditable || target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.tagName === 'SELECT') return;
+        const id = useMarkUi.getState().selected;
+        if (!id || !useApp.getState().marks.some((mark) => mark.id === id)) return;
+        e.preventDefault();
+        removeMark(id);
+        return;
+      }
       if (e.key !== 'Escape') return;
       if (markGrab) finishMark(false);
       else if (grab) finish(false);
-      else setTitleSelected(false);
+      else {
+        setTitleSelected(false);
+        selectMark(null);
+      }
     };
     const swallowed = ['mousedown', 'mousemove', 'mouseup', 'touchstart', 'touchmove', 'touchend', 'touchcancel'] as const;
     wrap.addEventListener('pointerdown', onDown, true);
@@ -534,13 +551,13 @@ export function MapView() {
   };
   const hint = titleSelected
     ? `Drag the title or its handles. ${COARSE ? 'Tap' : 'Click'} the map to let go.`
-    : markHover || markDragged
-      ? 'Drag it to put it somewhere else. Resize and turn it in the preview.'
+    : selectedMark || markHover || markDragged
+      ? `Drag it to put it somewhere else. ${!COARSE && selectedMark ? 'Delete removes it. ' : ''}Resize and turn it in the preview.`
       : titleHover
         ? 'Drag to move the title.'
         : (captureHint() ?? HINT);
   return (
-    <div className="map-wrap" ref={wrapRef}>
+    <div className="map-wrap" ref={wrapRef} tabIndex={-1}>
       <div ref={containerRef} className="map" />
       {layout && frame ? (
         <Overlay
@@ -571,6 +588,7 @@ export function MapView() {
           onStart={() => {
             mapRef.current?.stop();
             setTitleSelected(false);
+            selectMark(null);
           }}
           onHover={setCaptureHover}
           onPreview={setCaptureDraft}

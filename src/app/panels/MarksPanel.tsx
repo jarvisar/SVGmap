@@ -27,7 +27,7 @@ export function MarksPanel() {
     <Section title="Pins & text" summary={summary}>
       <div className="hint">
         Pins, shapes and text on the map, like home or where you met. The map is left out under them. In the preview, the Pins &amp; text button
-        lets you put them down with a click and drag them around.
+        lets you put them down with a click and drag them around. Click a pin, shape or text on the map and press Delete to remove it.
       </div>
       <Field label="Add">
         <div className="mark-shapes">
