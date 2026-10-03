@@ -130,6 +130,7 @@ export function useRouteEditor(active: boolean, unit: number, result: RenderResu
 
   const grab = useRef<Grab | null>(null);
   const [preview, setPreview] = useState<{ edit: SpanEdit; snapped: boolean } | null>(null);
+  const latestPreview = useRef<typeof preview>(null);
   const [hovered, setHovered] = useState<Hover>(null);
   const [drawing, setDrawing] = useState<Point[] | null>(null);
   const [announce, setAnnounce] = useState('');
@@ -145,6 +146,7 @@ export function useRouteEditor(active: boolean, unit: number, result: RenderResu
   useEffect(() => {
     if (!active) {
       grab.current = null;
+      latestPreview.current = null;
       setPreview(null);
       setHovered(null);
       setDrawing(null);
@@ -255,7 +257,8 @@ export function useRouteEditor(active: boolean, unit: number, result: RenderResu
         held.kind === 'point'
           ? moveEdit(path, held.line, held.before, held.index, held.after, to, via, space)
           : insertEdit(path, held.line, held.segment, held.t, held.before, held.after, to, via, space);
-      setPreview({ edit, snapped });
+      latestPreview.current = { edit, snapped };
+      setPreview(latestPreview.current);
       return true;
     },
     hover(at, alt) {
@@ -281,7 +284,9 @@ export function useRouteEditor(active: boolean, unit: number, result: RenderResu
       const held = grab.current;
       if (!held || held.pointerId !== e.pointerId) return false;
       grab.current = null;
-      const done = preview;
+      // Pointerup can arrive before React draws the last pointermove.
+      const done = latestPreview.current;
+      latestPreview.current = null;
       setPreview(null);
       if (e.type === 'pointercancel' || !route || !space) return true;
       if (!held.moved) {
@@ -305,7 +310,7 @@ export function useRouteEditor(active: boolean, unit: number, result: RenderResu
       return true;
     },
     click(at, e) {
-      if (!active || !space) return;
+      if (!active || !space || e.button !== 0) return;
       if (tool === 'draw') {
         const { to, snapped } = target(at, e.altKey);
         drawTo(to, snapped ? roads : null, space);
@@ -407,6 +412,7 @@ export function useRouteEditor(active: boolean, unit: number, result: RenderResu
     },
     cancel() {
       grab.current = null;
+      latestPreview.current = null;
       setPreview(null);
     },
   };

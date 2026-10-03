@@ -177,26 +177,36 @@ export const mmFor = (space: EditSpace, metres: number) => metres / space.metres
 
 // One graph at a time. A new render of the same map has new pick arrays with
 // the same roads in them, so it's keyed on what's in them.
-let cachedGraph: { key: string; graph: RoadGraph } | null = null;
+let cachedGraph: { pick: PickLines; transform: MapTransform; graph: RoadGraph | null } | null = null;
 
-function pickKey(pick: PickLines, t: MapTransform): string {
-  let sum = 0;
-  const step = Math.max(1, Math.floor(pick.points.length / 997));
-  for (let i = 0; i < pick.points.length; i += step) sum += pick.points[i] * ((i % 13) + 1);
-  const p = pick.transform;
-  return [pick.starts.length, pick.points.length, sum, p.zoom, p.cx, p.cy, p.mmPerUnit, p.cos, t.zoom, t.cx, t.cy, t.mmPerUnit, t.cos, t.wx, t.wy].join(',');
+function sameTransform(a: PickLines['transform'], b: PickLines['transform']): boolean {
+  return a.zoom === b.zoom && a.cx === b.cx && a.cy === b.cy && a.mmPerUnit === b.mmPerUnit
+    && a.cos === b.cos && a.sin === b.sin && a.wx === b.wx && a.wy === b.wy;
+}
+
+function sameArray(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function sameRoads(a: PickLines, b: PickLines): boolean {
+  return a === b || (sameTransform(a.transform, b.transform) && sameArray(a.points, b.points)
+    && sameArray(a.starts, b.starts) && sameArray(a.layers, b.layers) && sameArray(a.levels, b.levels));
 }
 
 /** The render's roads and paths as a graph in the space's mm, or null without a render. */
 export function roadGraphFor(pick: PickLines | undefined, space: EditSpace | null): RoadGraph | null {
   if (!pick || !space) return null;
-  const key = pickKey(pick, space.transform);
-  if (cachedGraph?.key === key) return cachedGraph.graph;
+  if (cachedGraph && sameTransform(cachedGraph.transform, space.transform)
+    && cachedGraph.transform.metresPerMm === space.metresPerMm && sameRoads(cachedGraph.pick, pick)) return cachedGraph.graph;
   const t = space.transform;
   const k = 2 ** (t.zoom - pick.transform.zoom);
   const graph = buildRoadGraph(pick, (x, y) => t.toCanvas(x * k, y * k), space.metresPerMm);
-  cachedGraph = { key, graph };
-  return graph;
+  const available = graph.edgeA.length ? graph : null;
+  cachedGraph = { pick, transform: t, graph: available };
+  return available;
 }
 
 /** Along the roads from a to b, or straight when either is off the roads or they don't connect. */
@@ -315,19 +325,18 @@ function pointNear(lines: readonly LonLat[][], target: LonLat): RoutePoint | nul
  */
 export function commitLines(route: RouteData, lines: LonLat[][], label: string | null, focus: LonLat | null, done?: string): void {
   if (!originals.has(route.id)) originals.set(route.id, route.lines);
-  const kept = lines.filter((l) => l.length >= 2);
-  if (!kept.length) {
+  const encoded = encodeRoute(lines.filter((l) => l.length >= 2));
+  const stored = decodeRoute({ lines: encoded });
+  if (!stored.length) {
     asChange(label ?? 'Remove route', () => useApp.getState().removeRoute(route.id));
-    useRouteEdit.setState({ routeId: null, selected: null, section: null, tool: 'draw' });
+    useRouteEdit.setState({ routeId: null, selected: null, section: null, sectionFrom: null, draft: null, tool: 'draw' });
     flash(`Removed ${route.name}, nothing was left of it. Undo brings it back.`, 4000);
     return;
   }
-  const encoded = encodeRoute(kept);
   const store = () => useApp.getState().updateRoute(route.id, { lines: encoded });
   if (label) asChange(label, store);
   else store();
-  const stored = decodeRoute({ lines: encoded });
-  useRouteEdit.setState({ selected: focus ? pointNear(stored, focus) : null, section: null });
+  useRouteEdit.setState({ selected: focus ? pointNear(stored, focus) : null, section: null, sectionFrom: null });
   if (done) flash(done);
 }
 
@@ -447,6 +456,7 @@ export function drawTo(to: Point, graph: RoadGraph | null, space: EditSpace): vo
     const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const name = drawnName();
     const lines = encodeRoute([points]);
+    if (!decodeRoute({ lines }).length) return;
     asChange('Draw route', () => useApp.getState().addRoutes([{ id, name, visible: true, lines }]));
     originals.set(id, lines);
     useRouteEdit.setState({ routeId: id, draft: null, selected: pointNear(decodeRoute({ lines }), points[points.length - 1]), section: null });

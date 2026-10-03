@@ -7,7 +7,7 @@ import { type AreaSpec, makeTransform } from '../engine/geo/transform.ts';
 import { type Layout, computeLayout } from '../engine/layout/layout.ts';
 import { shapeCentre, shapeContains } from '../engine/layout/shapes.ts';
 import { fitArea } from '../engine/routes/fit.ts';
-import { RouteFileError, parseRouteFile } from '../engine/routes/parse.ts';
+import { MAX_FILE_BYTES, RouteFileError, parseRouteFile } from '../engine/routes/parse.ts';
 import type { LonLat } from '../engine/routes/polyline.ts';
 import { decodeRoute, encodeRoute } from '../engine/routes/route.ts';
 import type { RouteData } from '../engine/settings.ts';
@@ -73,8 +73,11 @@ async function importFiles(files: File[]): Promise<ImportResult> {
       continue;
     }
     try {
+      if (file.size > MAX_FILE_BYTES) throw new RouteFileError(`This file is over ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
       const parsed = await parseRouteFile(file.name, await file.arrayBuffer());
-      added.push({ id: newId(), name: parsed.name, visible: true, lines: encodeRoute(parsed.lines) });
+      const lines = encodeRoute(parsed.lines);
+      if (!decodeRoute({ lines }).length) throw new RouteFileError('This route is too short to draw.');
+      added.push({ id: newId(), name: parsed.name, visible: true, lines });
     } catch (error) {
       if (!(error instanceof RouteFileError)) console.error(error);
       const reason = error instanceof RouteFileError ? error.message : "It couldn't be read.";

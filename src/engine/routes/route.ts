@@ -140,7 +140,8 @@ export function decodeRoute(route: Pick<RouteData, 'lines'>): LonLat[][] {
   const out: LonLat[][] = [];
   for (const text of route.lines) {
     if (typeof text !== 'string') continue;
-    const line = decodePolyline(text).filter(([lon, lat]) => Math.abs(lon) <= 180 && Math.abs(lat) <= 90);
+    const line = decodePolyline(text).filter(([lon, lat]) => Math.abs(lon) <= 180 && Math.abs(lat) <= 90)
+      .filter((point, i, points) => i === 0 || point[0] !== points[i - 1][0] || point[1] !== points[i - 1][1]);
     if (line.length >= 2) out.push(line);
   }
   return out;

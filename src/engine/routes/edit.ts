@@ -184,7 +184,9 @@ export function trimRoute(lines: readonly (readonly LonLat[])[], metres: number,
         }
         const t = step > 0 ? left / step : 0;
         const [a, b] = [points[i - 1], points[i]];
-        const cut: LonLat = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        const delta = ((b[0] - a[0] + 540) % 360) - 180;
+        const lon = a[0] + delta * t;
+        const cut: LonLat = [lon > 180 ? lon - 360 : lon < -180 ? lon + 360 : lon, a[1] + (b[1] - a[1]) * t];
         left = 0;
         // A cut right on the next point would leave it twice.
         out.push(t < 1 ? [cut, ...points.slice(i)] : points.slice(i));

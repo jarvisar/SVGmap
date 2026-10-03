@@ -148,7 +148,19 @@ export function Preview(props: { onGenerate: () => void; upToDate: boolean }) {
 
   // Editing routes. The editor gets presses on the route before anything else.
   const routeEditing = useRouteEdit((s) => s.editing) && !picking;
+  const routeEditOpened = useRouteEdit((s) => s.opened);
   const routeEditor = useRouteEditor(routeEditing, unit, result);
+
+  // The sidebar can open the route editor while another preview tool is active.
+  useEffect(() => {
+    if (!useRouteEdit.getState().editing) return;
+    setPicking(false);
+    setSelected([]);
+    setEditing(false);
+    selectMark(null);
+    setTitleSelected(false);
+    setHoverTitle(false);
+  }, [routeEditOpened]);
 
   // Pins and text. Like the title, they're laid out here to be dragged. While
   // the result is behind the settings they're drawn from the settings, so a

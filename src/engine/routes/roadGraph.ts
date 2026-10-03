@@ -667,7 +667,7 @@ export function matchToRoads(graph: RoadGraph, path: readonly Point[], options: 
       pieces.reverse();
       const points: Point[] = [];
       for (const piece of pieces) points.push(...(points.length ? piece.slice(1) : piece));
-      return { from: samples[c.start].along, to: samples[c.start + steps.length - 1].along, points };
+      return { from: samples[c.start].along, to: samples[c.start + steps.length - 1].along, points: removeSpurs(points, options.spur) };
     });
 
   // Between and around the matched stretches, the track's own points.
@@ -680,7 +680,7 @@ export function matchToRoads(graph: RoadGraph, path: readonly Point[], options: 
     at = m.to;
   }
   out.push(...slice(path, at, Infinity));
-  return removeSpurs(dedupe(out), options.spur);
+  return dedupe(out);
 }
 
 interface Sample {
@@ -704,7 +704,7 @@ function resample(path: readonly Point[], spacing: number): Sample[] {
     }
     along += length;
   }
-  if (along - out[out.length - 1].along > spacing * 0.25) out.push({ point: path[path.length - 1], along });
+  if (out.length === 1 || along - out[out.length - 1].along > spacing * 0.25) out.push({ point: path[path.length - 1], along });
   else out[out.length - 1] = { point: path[path.length - 1], along };
   return out;
 }

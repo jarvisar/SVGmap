@@ -95,6 +95,16 @@ describe('road graph', () => {
 });
 
 describe('matching to roads', () => {
+  it('snaps a track shorter than the sample spacing', () => {
+    const graph = graphOf([{ points: [[0, 0], [100, 0]] }]);
+    expect(matchToRoads(graph, [[1, 1], [4, 1]], { spacing: 20, reach: 30, sigma: 3, spur: 40 })).toEqual([[1, 0], [4, 0]]);
+  });
+
+  it('preserves short out-and-back stretches away from roads', () => {
+    const graph = graphOf([{ points: [[0, 0], [100, 0]] }]);
+    const path: Point[] = [[0, 100], [10, 100], [0, 100], [0, 150]];
+    expect(matchToRoads(graph, path, { spacing: 20, reach: 30, sigma: 3, spur: 40 })).toEqual(path);
+  });
   const options = { spacing: 10, reach: 15, sigma: 5, spur: 20 };
 
   it('moves a noisy track onto the street it runs along and round the corner', () => {

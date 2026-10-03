@@ -7,6 +7,8 @@ export interface XmlVisitor {
   text(text: string): void;
 }
 
+export class XmlError extends Error {}
+
 const TOKEN =
   /<!--[\s\S]*?-->|<!\[CDATA\[([\s\S]*?)\]\]>|<\?[\s\S]*?\?>|<!DOCTYPE(?:[^>[]|\[[\s\S]*?\])*>|<(\/?)([^\s/>!?]+)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/g;
 const ATTRIBUTE = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
@@ -27,21 +29,35 @@ export function decodeEntities(text: string): string {
 export function walkXml(source: string, visitor: XmlVisitor): void {
   TOKEN.lastIndex = 0;
   let last = 0;
+  const stack: string[] = [];
+  let root = false;
+  const malformed = () => { throw new XmlError("This XML file is incomplete or malformed."); };
+  const text = (raw: string) => {
+    if (raw.includes('<') || (!stack.length && raw.trim())) malformed();
+    if (stack.length) visitor.text(decodeEntities(raw));
+  };
   let match: RegExpExecArray | null;
   while ((match = TOKEN.exec(source)) !== null) {
-    if (match.index > last) visitor.text(decodeEntities(source.slice(last, match.index)));
+    if (match.index > last) text(source.slice(last, match.index));
     last = TOKEN.lastIndex;
     const [, cdata, slash, name, attributes, selfClosing] = match;
     if (cdata !== undefined) {
+      if (!stack.length) malformed();
       visitor.text(cdata);
       continue;
     }
     if (name === undefined) continue; // comment, declaration or doctype
     const local = localName(name);
     if (slash) {
+      if (attributes.trim() || selfClosing || stack.pop() !== name) malformed();
       visitor.close(local);
       continue;
     }
+    if (!stack.length) {
+      if (root) malformed();
+      root = true;
+    }
+    stack.push(name);
     const attrs: Record<string, string> = {};
     if (attributes) {
       ATTRIBUTE.lastIndex = 0;
@@ -49,7 +65,11 @@ export function walkXml(source: string, visitor: XmlVisitor): void {
       while ((a = ATTRIBUTE.exec(attributes)) !== null) attrs[localName(a[1])] = decodeEntities(a[2] ?? a[3] ?? '');
     }
     visitor.open(local, attrs);
-    if (selfClosing) visitor.close(local);
+    if (selfClosing) {
+      stack.pop();
+      visitor.close(local);
+    }
   }
-  if (last < source.length) visitor.text(decodeEntities(source.slice(last)));
+  if (last < source.length) text(source.slice(last));
+  if (stack.length || !root) malformed();
 }

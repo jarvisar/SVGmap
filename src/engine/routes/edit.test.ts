@@ -78,6 +78,12 @@ describe('nearestOnLines', () => {
 });
 
 describe('trimRoute', () => {
+  it('trims an edited route across the date line without moving its endpoint across the world', () => {
+    const line: LonLat[] = [[179.999, 0], [-179.999, 0]];
+    const out = trimRoute([line], 50, 'start');
+    expect(spanLengthM(out[0])).toBeCloseTo(spanLengthM(line) - 50, 3);
+    expect(Math.abs(out[0][0][0])).toBeGreaterThan(179.99);
+  });
   // About 1.1 km along the equator, a point every 111 m.
   const line: LonLat[] = Array.from({ length: 11 }, (_, i) => [i / 1000, 0]);
 

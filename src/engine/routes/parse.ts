@@ -2,7 +2,7 @@
 // line in the file becomes part of one route. Points and waypoints are skipped.
 import type { LonLat } from './polyline.ts';
 import { MAX_ROUTE_LINES, distanceM } from './route.ts';
-import { walkXml } from './xml.ts';
+import { XmlError, walkXml } from './xml.ts';
 import { ZipError, kmlFromKmz } from './zip.ts';
 
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -36,6 +36,7 @@ interface FileContents {
 }
 
 const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
+const coordinate = (text: string | undefined): number => text && /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text.trim()) ? Number(text) : NaN;
 
 function readGpx(text: string): FileContents {
   const chunks: Chunk[] = [];
@@ -48,44 +49,50 @@ function readGpx(text: string): FileContents {
   let points = 0;
   walkXml(text, {
     open(name, attrs) {
+      const parent = stack[stack.length - 1];
       stack.push(name);
+      if (stack.includes('extensions')) return;
       buffer = '';
-      if (name === 'trk' || name === 'rte') {
+      if ((name === 'trk' || name === 'rte') && parent === 'gpx') {
         chunk = { lines: [], track: name === 'trk' };
         chunks.push(chunk);
         if (name === 'rte') {
           line = [];
           chunk.lines.push(line);
         }
-      } else if (name === 'trkseg') {
+      } else if (name === 'trkseg' && parent === 'trk') {
         line = [];
         if (!chunk) {
           chunk = { lines: [], track: true };
           chunks.push(chunk);
         }
         chunk.lines.push(line);
-      } else if (name === 'trkpt' || name === 'rtept') {
-        line?.push([parseFloat(attrs.lon), parseFloat(attrs.lat)]);
-      } else if (name === 'wpt') {
+      } else if ((name === 'trkpt' && parent === 'trkseg') || (name === 'rtept' && parent === 'rte')) {
+        line?.push([coordinate(attrs.lon), coordinate(attrs.lat)]);
+      } else if (name === 'wpt' && parent === 'gpx') {
         points++;
       }
     },
     close(name) {
+      if (stack.includes('extensions')) {
+        stack.pop();
+        return;
+      }
       const parent = stack[stack.length - 2];
       if (name === 'name') {
         // GPX 1.0 puts the file's name straight under gpx.
         if ((parent === 'metadata' || parent === 'gpx') && !fileName) fileName = collapse(buffer);
         if ((parent === 'trk' || parent === 'rte') && !trackName) trackName = collapse(buffer);
-      } else if (name === 'trk' || name === 'rte') {
+      } else if ((name === 'trk' || name === 'rte') && parent === 'gpx') {
         chunk = null;
         line = null;
-      } else if (name === 'trkseg') {
+      } else if (name === 'trkseg' && parent === 'trk') {
         line = null;
       }
       stack.pop();
     },
     text(t) {
-      buffer += t;
+      if (!stack.includes('extensions')) buffer += t;
     },
   });
   return { name: fileName || trackName, chunks, points };
@@ -95,7 +102,7 @@ function kmlCoordinates(text: string): LonLat[] {
   const tuples = text.replace(/\s*,\s*/g, ',').trim().split(/\s+/);
   return tuples.map((tuple) => {
     const [lon, lat] = tuple.split(',');
-    return [parseFloat(lon), parseFloat(lat)];
+    return [coordinate(lon), coordinate(lat)];
   });
 }
 
@@ -129,7 +136,7 @@ function readKml(text: string): FileContents {
         else if (parent === 'Point') points++;
       } else if (name === 'coord' && track) {
         const [lon, lat] = buffer.trim().split(/\s+/);
-        track.push([parseFloat(lon), parseFloat(lat)]);
+        track.push([coordinate(lon), coordinate(lat)]);
       } else if (name === 'Track') {
         track = null;
       } else if (name === 'MultiTrack') {
@@ -180,8 +187,8 @@ function readTcx(text: string): FileContents {
     },
     close(element) {
       const parent = stack[stack.length - 2];
-      if (element === 'LatitudeDegrees') lat = parseFloat(buffer);
-      else if (element === 'LongitudeDegrees') lon = parseFloat(buffer);
+      if (element === 'LatitudeDegrees') lat = coordinate(buffer);
+      else if (element === 'LongitudeDegrees') lon = coordinate(buffer);
       // A trackpoint without a position, like heart rate on a treadmill, is skipped.
       else if (element === 'Trackpoint' && line && Number.isFinite(lat) && Number.isFinite(lon)) line.push([lon, lat]);
       else if (element === 'Track') line = null;
@@ -273,15 +280,20 @@ function rootName(source: string): string {
 
 function readXml(source: string): FileContents {
   const root = rootName(source);
-  switch (root.slice(root.indexOf(':') + 1)) {
-    case 'gpx':
-      return readGpx(source);
-    case 'kml':
-      return readKml(source);
-    case 'TrainingCenterDatabase':
-      return readTcx(source);
-    default:
-      throw new RouteFileError(NOT_A_ROUTE);
+  try {
+    switch (root.slice(root.indexOf(':') + 1)) {
+      case 'gpx':
+        return readGpx(source);
+      case 'kml':
+        return readKml(source);
+      case 'TrainingCenterDatabase':
+        return readTcx(source);
+      default:
+        throw new RouteFileError(NOT_A_ROUTE);
+    }
+  } catch (error) {
+    if (error instanceof XmlError) throw new RouteFileError(error.message);
+    throw error;
   }
 }
 
@@ -290,15 +302,25 @@ function readXml(source: string): FileContents {
 function cleanLine(raw: readonly LonLat[]): LonLat[][] {
   const out: LonLat[][] = [];
   let line: LonLat[] = [];
-  for (const [lon, lat] of raw) {
+  for (const point of raw) {
+    let lon = point[0];
+    const lat = point[1];
     if (!Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) continue;
     const prev = line[line.length - 1];
+    if (prev && Math.abs(prev[0] - lon) === 360) lon = prev[0];
     if (prev && prev[0] === lon && prev[1] === lat) continue;
     if (prev && Math.abs(lon - prev[0]) > 180) {
+      // Keep the crossing itself, even when there are only two recorded points.
+      const edge = prev[0] > 0 ? 180 : -180;
+      const unwrapped = lon + (edge > 0 ? 360 : -360);
+      const t = (edge - prev[0]) / (unwrapped - prev[0]);
+      const crossingLat = prev[1] + (lat - prev[1]) * t;
+      if (prev[0] !== edge) line.push([edge, crossingLat]);
       if (line.length >= 2) out.push(line);
-      line = [];
+      line = [[-edge, crossingLat]];
     }
-    line.push([lon, lat]);
+    const end = line[line.length - 1];
+    if (!end || end[0] !== lon || end[1] !== lat) line.push([lon, lat]);
   }
   if (line.length >= 2) out.push(line);
   return out;
@@ -349,7 +371,9 @@ export async function parseRouteFile(fileName: string, data: ArrayBuffer): Promi
   } else if (signature(8, 12) === '.FIT') {
     throw new RouteFileError("FIT files can't be read. Export the activity as a GPX file instead, most apps and watches can.");
   } else {
-    const source = new TextDecoder().decode(data);
+    const encoding = (head[0] === 0xff && head[1] === 0xfe) || (head[0] === 0x3c && head[1] === 0) ? 'utf-16le'
+      : (head[0] === 0xfe && head[1] === 0xff) || (head[0] === 0 && head[1] === 0x3c) ? 'utf-16be' : 'utf-8';
+    const source = new TextDecoder(encoding).decode(data);
     const start = /\S/.exec(source.slice(0, 4096).replace(/^﻿/, ''))?.[0];
     if (start === '{' || start === '[') contents = readGeoJson(source.replace(/^﻿/, ''));
     else if (start === '<') contents = readXml(source);
